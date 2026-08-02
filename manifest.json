@@ -1,0 +1,10 @@
+{
+  "Name": "Animal Barn",
+  "Author": "xiepe",
+  "Version": "1.0.0",
+  "Description": "动物养殖场：罗宾建造，8个动物房间+干草房，全自动每日结算，中枢管理，大规模养殖不卡顿。",
+  "UniqueID": "xiepe.AnimalBarn",
+  "EntryDll": "AnimalBarn.dll",
+  "MinimumApiVersion": "4.0.0",
+  "UpdateKeys": []
+}
