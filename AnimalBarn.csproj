@@ -14,6 +14,10 @@
     <PackageReference Include="Lib.Harmony" Version="2.3.3" />
   </ItemGroup>
   <ItemGroup>
+    <!-- 排除独立测试工程(会与主程序集冲突的重复编译) -->
+    <Compile Remove="logic_test/**" />
+  </ItemGroup>
+  <ItemGroup>
     <None Update="manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="i18n\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
