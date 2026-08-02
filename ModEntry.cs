@@ -10,6 +10,7 @@ public class ModEntry : Mod
     {
         Instance = this;
         helper.Events.Content.AssetRequested += BuildDataInjection.OnAssetRequested;
+        helper.Events.Content.AssetRequested += LobbyMapBuilder.OnAssetRequested;
         this.Monitor.Log("AnimalBarn loaded.", LogLevel.Info);
     }
 }

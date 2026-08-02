@@ -9,6 +9,8 @@
 **Tech Stack:** .NET 6, C# 12, SMAPI 4.5.1, Stardew Valley 1.6.15, Harmony 2.3.3, xTile(代码生成室内地图), ModBuildConfig 4.4.0。参考 mod:`MonsterArena`(代码生成地图配方)、`JunimoTaskScheduler`(logic_test 无头测试)。
 
 **关键已验证事实(反编译 1.6.15,勿重推导):**
+- `AnimalHouse` 在 **`StardewValley` 根命名空间**(不是 `StardewValley.Locations`),构造 `()` 和 `(string, string)` 两个都有。已编译验证。
+- `BuildingData`/`BuildingMaterial`/`BuildingSkin` 在 **`StardewValley.GameData.Buildings`**(GameData.dll),字段全部确认(Size/HumanDoor/BuildDays/BuildCost/BuildMaterials/Builder/IndoorMap/IndoorMapType/MaxOccupants/ValidOccupantTypes 等)。
 - `CarpenterMenu` 构造遍历 `Game1.buildingData`,凡 `Builder == 菜单Builder`(Robin)且 `BuildCondition` 通过者自动成为蓝图。注入 `Data/Buildings` 数据行即可,零 Harmony。
 - `Building` 用 `IndoorMap`(Maps\ 前缀)+ `IndoorMapType`(Type.GetType 反射)创建室内;`createIndoors` 是 `protected virtual`,自定义 Building 子类可覆写。
 - `AnimalHouse.DayUpdate` 先 `base.DayUpdate`(跑动物 dayUpdate),再若地图有 `AutoFeed` 属性则 `feedAllAnimals`(自动喂食)。
