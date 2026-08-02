@@ -32,11 +32,14 @@ public static class SettlementService
         // 2. 实体↔台账同步(实体结算已由 base.DayUpdate 完成,把实体最终值写回台账)
         SyncLedgerFromEntities(room, roomType, ledger);
 
-        // 3. 台账结算(干草从全局库存扣;实体动物的干草由原生 AutoFeed 从干草槽消耗,两套独立)
+        // 3. 台账结算(干草从全局库存扣;实体动物的干草由原生 AutoFeed 免费喂食,两套独立)。
+        //    实体动物已由 base.DayUpdate 完成原生结算(产蛋/好感),台账必须跳过它们,
+        //    否则同一只鸡一天双蛋、好感双涨 —— 这就是双结算 bug 的根源。
         var ctx = new SettleContext(
             FriendshipGain: UpgradeSystem.FriendshipGainAt(state.OverallLevel),
             HappinessGain: 20);
-        var hay = ledger.SettleDay(ctx, state.HayStock);
+        var entityIds = room is AnimalHouse ah0 ? GetEntityIds(ah0) : null;
+        var hay = ledger.SettleDay(ctx, state.HayStock, entityIds);
         state.HayStock = Math.Max(0, state.HayStock - hay.HayConsumed);
 
         // 4. 实体动物自动护理:好感按整体等级补增 + wasAutoPet 标记,防止原生结算里
@@ -53,6 +56,15 @@ public static class SettlementService
 
         // 5. 台账写回
         ledger.SaveTo(roomState);
+    }
+
+    /// <summary>当前房间的实体动物 id 集合(结算时传给台账,跳过这批动物)。</summary>
+    private static HashSet<long> GetEntityIds(AnimalHouse ah)
+    {
+        var ids = new HashSet<long>();
+        foreach (var animal in ah.animals.Values)
+            ids.Add(animal.myID.Value);
+        return ids;
     }
 
     /// <summary>把实体动物的最终值(结算后)同步回台账记录;实体不在台账(如直接购买)则加入。

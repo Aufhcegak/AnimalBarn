@@ -53,17 +53,21 @@ public class AnimalLedger
     public List<LedgerAnimal> GetVisible() => Animals.Take(MaxVisible).ToList();
 
     /// <summary>每日结算(纯逻辑,由房间 DayUpdate 调用):喂食→成长→产产品→好感/心情。
+    /// <paramref name="excludeIds"/> = 有实体的动物 id(该批已由原版 base.DayUpdate 结算:
+    /// 喂食走 AutoFeed 免费、产蛋走原生规则、好感走 dayUpdate) —— 台账跳过它们,避免双结算
+    /// (双份产物/双扣草/双好感)。只结算纯台账动物。
     /// 干草规则:每只饥饿的成年动物(Fullness &lt;= 0)需要 1 份干草;已有饱食度的动物不耗草。
     /// 饥饿的动物按台账顺序依次喂,干草不足时排在后面的挨饿。
     /// 返回实际消耗的干草数和结算后仍饥饿的成年数(供调用方扣库存/提示)。</summary>
-    public SettleHayResult SettleDay(SettleContext ctx, int hayAvailable)
+    public SettleHayResult SettleDay(SettleContext ctx, int hayAvailable, HashSet<long>? excludeIds = null)
     {
-        int hungryAdults = Animals.Count(a => a.IsAdult && a.Fullness <= 0);
+        int hungryAdults = Animals.Count(a => a.IsAdult && a.Fullness <= 0 && !IsExcluded(a, excludeIds));
         int hayUsed = Math.Min(hayAvailable, hungryAdults);
         int hayConsumed = 0;
 
         foreach (var a in Animals)
         {
+            if (IsExcluded(a, excludeIds)) continue;   // 实体动物:原版已结算,台账不碰
             if (a.IsAdult)
             {
                 if (a.Fullness > 0 || hayUsed > 0)
@@ -93,6 +97,9 @@ public class AnimalLedger
         }
         return new SettleHayResult(hayConsumed, hungryAdults - hayConsumed);
     }
+
+    private static bool IsExcluded(LedgerAnimal a, HashSet<long>? excludeIds)
+        => excludeIds != null && excludeIds.Contains(a.Id);
 
     public void AddProduce(string qualifiedId)
     {

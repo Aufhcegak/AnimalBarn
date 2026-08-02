@@ -494,6 +494,15 @@ public class HubMenu : IClickableMenu
         }
     }
 
+    /// <summary>联机守卫:只有主机能改养殖场状态(状态存 Building.ModData,由主机单向同步到客机;
+    /// 客机直接改会被主机覆盖 → 花钱/花料但动物/产物消失 = desync)。所有写操作统一走这里。</summary>
+    private bool GuardHostOnly()
+    {
+        if (EdgePolish.CanModifyState()) return true;
+        Notice("联机下只有主机能操作养殖场", error: true);
+        return false;
+    }
+
     /// <summary>数背包里某物品总数(木/石)。</summary>
     private static int CountInInventory(Farmer f, string qualifiedId)
     {
@@ -525,6 +534,7 @@ public class HubMenu : IClickableMenu
     /// <summary>整体升级:扣钱+木+石,提升整体等级(解锁新房间)。</summary>
     private void UpgradeOverall()
     {
+        if (!GuardHostOnly()) return;
         var state = State;
         if (state == null) return;
         if (!UpgradeSystem.IsUnlocked(RoomType.Chicken, state.OverallLevel) || state.OverallLevel >= 5)
@@ -554,6 +564,7 @@ public class HubMenu : IClickableMenu
     /// RoomFor 后的实际房间,否则会建幽灵 "Sheep" 房间键、羊场容量永远不升。</summary>
     private void UpgradeRoom(RoomType room)
     {
+        if (!GuardHostOnly()) return;
         var state = State;
         if (state == null) return;
         RoomType houseRoom = RoomDefinitions.RoomFor(room);   // Sheep→羊场(Goat);其余 1:1
@@ -582,6 +593,7 @@ public class HubMenu : IClickableMenu
     /// 台账 Room 记动物类型(结算产物/成熟天数按各自类型),实体生成/容量/解锁都落到实际房间。</summary>
     private void BuyAnimal(RoomType animalType)
     {
+        if (!GuardHostOnly()) return;
         var info = FarmAnimalCatalog.Get(animalType);
         var state = State;
         if (state == null) return;
@@ -650,6 +662,7 @@ public class HubMenu : IClickableMenu
     /// <summary>购买干草(进全局库存)。</summary>
     private void BuyHay(int qty)
     {
+        if (!GuardHostOnly()) return;
         var state = State;
         if (state == null) return;
         int actual = HaySystem.BuyHay(state, Game1.player, qty);
@@ -666,6 +679,7 @@ public class HubMenu : IClickableMenu
     /// <summary>取走单个产品堆叠(全部数量;装不下的进物品栏菜单,留在仓库)。</summary>
     private void TakeOne(int index)
     {
+        if (!GuardHostOnly()) return;
         var state = State;
         if (state == null) return;
         var stacks = GetAggregatedStacks();
@@ -691,6 +705,7 @@ public class HubMenu : IClickableMenu
     /// <summary>全部取走:所有产品堆叠进背包(装不下的进物品栏菜单,留在仓库)。</summary>
     private void TakeAllProduce()
     {
+        if (!GuardHostOnly()) return;
         var state = State;
         if (state == null) return;
         var stacks = GetAggregatedStacks();
@@ -726,6 +741,7 @@ public class HubMenu : IClickableMenu
     /// <summary>取干草进背包(装不下的部分进物品栏菜单,留在库存)。</summary>
     private void WithdrawHay()
     {
+        if (!GuardHostOnly()) return;
         var state = State;
         if (state == null) return;
         if (state.HayStock <= 0)

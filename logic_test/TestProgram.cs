@@ -74,6 +74,18 @@ l6.TryAdd(a2);
 var hayShort = l6.SettleDay(new SettleContext(6, 20), hayAvailable: 1);
 Check("short hay: 1 consumed", hayShort.HayConsumed == 1);
 Check("short hay: 1 hungry left", hayShort.HungryAdults == 1);
+
+// 8b. 实体动物跳过(双结算防护):excludeIds 里的动物不产/不耗草/不动
+var ex1 = new LedgerAnimal { Id = 9001, Room = RoomType.Chicken, AgeDays = 10, Happiness = 200, Fullness = 0, DaysSinceProduce = 3, Friendship = 50 };
+var ex2 = new LedgerAnimal { Id = 9002, Room = RoomType.Chicken, AgeDays = 10, Happiness = 200, Fullness = 0, DaysSinceProduce = 3, Friendship = 50 };
+var l7 = new AnimalLedger { Capacity = 10 };
+l7.TryAdd(ex1);
+l7.TryAdd(ex2);
+var hayEx = l7.SettleDay(new SettleContext(6, 20), hayAvailable: 100, excludeIds: new HashSet<long> { 9001 });
+Check("excluded animal: no hay consumed for it", hayEx.HayConsumed == 1);          // 只有 9002 耗草
+Check("excluded animal: not produced", ex1.ProduceCount == 0 && ex1.DaysSinceProduce == 3);  // 9001 完全没动
+Check("excluded animal: no friendship gain", ex1.Friendship == 50);
+Check("included animal: still settles", ex2.Fullness == 255 && ex2.Friendship > 50);
 Check("short hay: first fed", a1.Fullness == 255 && a1.Friendship == 6);
 Check("short hay: second hungry", a2.Fullness == 0 && a2.Friendship == 80 && a2.Happiness == 100);
 Check("short hay: only fed one produces", l6.ProduceCount == 1 && a1.ProduceCount == 1 && a2.ProduceCount == 0);
