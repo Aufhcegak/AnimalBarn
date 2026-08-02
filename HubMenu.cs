@@ -141,17 +141,26 @@ public class HubMenu : IClickableMenu
         b.DrawString(Game1.dialogueFont, "动物养殖场中枢",
             new Vector2(xPositionOnScreen + 24, yPositionOnScreen + 14), Game1.textColor);
 
-        // 页签
+        // 页签(当前页签高亮:亮底 + 白字;未激活:半透明底 + 灰字)
         string[] names = { "状态", "升级", "商店", "仓库" };
         for (int i = 0; i < _tabRects.Count; i++)
         {
             Rectangle r = _tabRects[i];
-            b.Draw(Game1.mouseCursors, r, new Rectangle(64, 256, 64, 64), Color.White * 0.9f);
+            bool active = i == (int)_tab;
+            // 高亮条:当前页签加一条亮色顶边(视觉锚点,不改布局)
+            if (active)
+                b.Draw(Game1.mouseCursors, new Rectangle(r.X, r.Y - 3, r.Width, 3), new Rectangle(64, 256, 64, 64), Color.Gold);
+            b.Draw(Game1.mouseCursors, r, new Rectangle(64, 256, 64, 64), active ? Color.White : Color.White * 0.55f);
             b.DrawString(Game1.smallFont, names[i],
                 new Vector2(r.X + (r.Width - Game1.smallFont.MeasureString(names[i]).X) / 2f,
                             r.Y + (r.Height - Game1.smallFont.MeasureString(names[i]).Y) / 2f),
-                i == (int)_tab ? Game1.textColor : new Color(120, 120, 120));
+                active ? Game1.textColor : new Color(120, 120, 120));
         }
+
+        // 内容区背景板(半透明深色,让文字有层级,不浮在边框上)
+        b.Draw(Game1.mouseCursors,
+            new Rectangle(xPositionOnScreen + 20, yPositionOnScreen + 88, MenuWidth - 40, MenuHeight - 120),
+            new Rectangle(64, 256, 64, 64), Color.Black * 0.25f);
 
         // 内容区
         switch (_tab)
@@ -268,14 +277,15 @@ public class HubMenu : IClickableMenu
         }
     }
 
-    /// <summary>绘制一个操作按钮(底图 + 文字)。</summary>
-    private static void DrawButton(SpriteBatch b, Rectangle rect, string text)
+    /// <summary>绘制一个操作按钮(底图 + 文字;悬停时高亮)。</summary>
+    private void DrawButton(SpriteBatch b, Rectangle rect, string text)
     {
-        b.Draw(Game1.mouseCursors, rect, new Rectangle(64, 256, 64, 64), Color.White * 0.9f);
+        bool hovered = rect.Contains(Game1.getMouseX(), Game1.getMouseY());
+        b.Draw(Game1.mouseCursors, rect, new Rectangle(64, 256, 64, 64), hovered ? Color.White : Color.White * 0.85f);
         Vector2 size = Game1.smallFont.MeasureString(text);
         b.DrawString(Game1.smallFont, text,
             new Vector2(rect.X + (rect.Width - size.X) / 2f, rect.Y + (rect.Height - size.Y) / 2f),
-            Game1.textColor);
+            hovered ? Color.White : Game1.textColor);
     }
 
     // ============================ 商店页 ============================
