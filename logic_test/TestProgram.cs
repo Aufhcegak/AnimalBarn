@@ -106,5 +106,33 @@ Check("friendship lvl5", UpgradeSystem.FriendshipGainAt(5) == 12);
 Check("friendship clamp low", UpgradeSystem.FriendshipGainAt(0) == 6);
 Check("friendship clamp high", UpgradeSystem.FriendshipGainAt(99) == 12);
 
+// --- SaveSerializer 往返(纯 JsonSerializer,不经 Building) ---
+// 选项须与 SaveSerializer 一致(IncludeFields:本 mod 数据类均用公共字段)。
+var serOpts = new System.Text.Json.JsonSerializerOptions { IncludeFields = true };
+var sd = new BarnSaveData
+{
+    OverallLevel = 3,
+    HayStock = 500,
+    ProduceCount = 10,
+};
+sd.GlobalProduceStacks["(O)176"] = 10;
+var room = sd.GetRoom(RoomType.Chicken);
+room.UpgradeLevel = 2;
+room.ProduceCount = 10;
+room.ProduceStacks["(O)176"] = 5;
+room.Animals.Add(new LedgerAnimal { Room = RoomType.Chicken, TypeKey = "White Chicken", AgeDays = 5, Friendship = 300, Happiness = 200, DaysSinceProduce = 1, ProduceCount = 2, OwnerId = 99 });
+var json = System.Text.Json.JsonSerializer.Serialize(sd, serOpts);
+var back = System.Text.Json.JsonSerializer.Deserialize<BarnSaveData>(json, serOpts)!;
+Check("serialize level", back.OverallLevel == 3);
+Check("serialize hay", back.HayStock == 500);
+Check("serialize produce", back.ProduceCount == 10);
+Check("serialize global stack", back.GlobalProduceStacks["(O)176"] == 10);
+Check("serialize room exists", back.HasRoom(RoomType.Chicken));
+Check("serialize room level", back.GetRoom(RoomType.Chicken).UpgradeLevel == 2);
+Check("serialize room stack", back.GetRoom(RoomType.Chicken).ProduceStacks["(O)176"] == 5);
+Check("serialize animal", back.GetRoom(RoomType.Chicken).Animals.Count == 1);
+Check("serialize animal fields", back.GetRoom(RoomType.Chicken).Animals[0].Friendship == 300 && back.GetRoom(RoomType.Chicken).Animals[0].TypeKey == "White Chicken");
+Check("serialize animal room enum", back.GetRoom(RoomType.Chicken).Animals[0].Room == RoomType.Chicken);
+
 Console.WriteLine(failures == 0 ? "ALL PASS" : $"{failures} FAILURES");
 return failures == 0 ? 0 : 1;
