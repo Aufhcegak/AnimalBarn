@@ -33,20 +33,33 @@ public static class BarnPatches
         SettlementService.SettleRoom(__instance);
     }
 
-    /// <summary>中枢操作台 prefix:玩家在大堂点击中枢台 tile → 打开中枢菜单。
-    /// 返回 false 跳过原版 checkAction(避免 Trough 等其他处理);非中枢台/非大堂放行。</summary>
+    /// <summary>中枢操作台 prefix:玩家在大堂点击中枢台 tile → 打开中枢菜单;
+    /// 门厅终端 tile → 打开房间选择菜单。返回 false 跳过原版 checkAction。
+    /// 非中枢台/非门厅终端/非养殖场放行原版。</summary>
     private static bool BeforeCheckAction(GameLocation __instance, Location tileLocation, Farmer who)
     {
         if (who == null || !who.IsLocalPlayer) return true;
+
+        // 门厅:终端 → 房间选择菜单
+        if (AnimalBarnLocations.IsHall(__instance))
+        {
+            if (!HallMapBuilder.IsTerminalTile(tileLocation.X, tileLocation.Y)) return true;
+            var building = __instance.ParentBuilding;
+            if (building == null || ModEntry.Instance.Barn == null) return true;
+            Game1.activeClickableMenu = new RoomSelectMenu(__instance, building, ModEntry.Instance.Barn);
+            Game1.playSound("bigSelect");
+            return false;
+        }
+
         if (!AnimalBarnLocations.IsLobby(__instance)) return true;   // 只在大堂
         if (!LobbyMapBuilder.IsHubTile(tileLocation.X, tileLocation.Y)) return true;  // 非中枢台
 
         var barn = ModEntry.Instance.Barn;
-        var building = __instance.ParentBuilding;
-        if (barn == null || building == null) return true;
-        var state = barn.GetOrCreate(building);
+        var lobbyBuilding = __instance.ParentBuilding;
+        if (barn == null || lobbyBuilding == null) return true;
+        var state = barn.GetOrCreate(lobbyBuilding);
         var snapshot = HubSnapshotBuilder.Build(state);
-        Game1.activeClickableMenu = new HubMenu(snapshot, barn, building);
+        Game1.activeClickableMenu = new HubMenu(snapshot, barn, lobbyBuilding);
         Game1.playSound("bigSelect");
         return false;   // 已处理,跳过原版
     }

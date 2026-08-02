@@ -15,9 +15,10 @@ public class ModEntry : Mod
         Instance = this;
         this.Barn = new BarnManager();
 
-        // 资产注入:建筑数据 + 大堂/房间地图
+        // 资产注入:建筑数据 + 大堂/门厅/房间地图
         helper.Events.Content.AssetRequested += BuildDataInjection.OnAssetRequested;
         helper.Events.Content.AssetRequested += LobbyMapBuilder.OnAssetRequested;
+        helper.Events.Content.AssetRequested += HallMapBuilder.OnAssetRequested;
         helper.Events.Content.AssetRequested += RoomMapBuilder.OnAssetRequested;
 
         // Harmony 补丁:产物拦截 + 拆除保护 + 每日结算 + 中枢操作台
@@ -43,15 +44,22 @@ public class ModEntry : Mod
         this.Monitor.Log("AnimalBarn loaded.", LogLevel.Info);
     }
 
-    /// <summary>每 tick:检测玩家站在大堂门洞 → warp 进房间。</summary>
+    /// <summary>每 tick:检测玩家站在大堂门厅门 → warp 进门厅;门厅终端放置(幂等);锁清除。</summary>
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
         if (!Context.IsWorldReady) return;
         if (Game1.currentLocation is not GameLocation cur) return;
-        if (!AnimalBarnLocations.IsLobby(cur)) return;   // 只在大堂检测门洞
-        HubConsole.EnsurePlaced(cur);                    // 中枢电脑台(幂等,缺失才补放)
-        var who = Game1.player;
-        if (who == null || !who.IsLocalPlayer) return;
-        LobbyDoors.TryEnterDoor(cur, who, this.Barn);
+        if (AnimalBarnLocations.IsLobby(cur))
+        {
+            HubConsole.EnsurePlaced(cur);                    // 中枢电脑台(幂等,缺失才补放)
+            var who = Game1.player;
+            if (who != null && who.IsLocalPlayer)
+                LobbyDoors.TryEnterDoor(cur, who, this.Barn);   // 门厅门检测
+        }
+        else if (AnimalBarnLocations.IsHall(cur))
+        {
+            HallTerminal.EnsurePlaced(cur);                  // 门厅终端(幂等)
+        }
+        LobbyDoors.OnEndOfTick();                            // 清一次性锁(必须:否则第一次进门后锁永不清,所有门失效)
     }
 }

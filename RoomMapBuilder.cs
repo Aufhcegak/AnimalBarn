@@ -81,22 +81,30 @@ public static class RoomMapBuilder
 
         // 干草槽:Back 层 y=3(活动区第一行,墙裙 y2 之下,无遮挡)一行加 Trough 属性
         // (AnimalHouse.feedAllAnimals 扫描 "Trough"/"Back" 属性喂食),并铺干草块(18)做视觉标识。
-        // tile 可通行,动物踩上去进食;绝不能放在墙/阻挡 tile 上。
-        for (int x = 3; x <= Width - 4; x++)
+        // 只铺在左右两圈内(x=2..5 与 x=9..12),中间过道 x=7 不铺(人是走道,不放槽)。
+        for (int x = 2; x <= 5; x++)
         {
             back.Tiles[x, 3] = new StaticTile(back, sheet, BlendMode.Alpha, 18);
             back.Tiles[x, 3].Properties["Trough"] = "T";
         }
+        for (int x = 9; x <= 12; x++)
+        {
+            back.Tiles[x, 3] = new StaticTile(back, sheet, BlendMode.Alpha, 18);
+            back.Tiles[x, 3].Properties["Trough"] = "T";
+        }
+        // 中间过道 x=7 铺浅色板(人的走道,视觉区分)
+        for (int y = 3; y <= 9; y++)
+            back.Tiles[DoorX, y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorLight);
 
-        // 干草点缀:在活动区(y>=4)撒几撮干草,营造畜棚氛围(每房种子固定 → 同类房间外观一致)。
-        // 避开干草槽行 y3 与出口门洞列(DoorX 那列,玩家进出路线)。
+        // 干草点缀:在左右两圈内(y>=4)撒几撮干草,营造畜棚氛围(每房种子固定)。
+        // 只在圈内(x 2..5 / 9..12),中间过道不留。
         var rng = new System.Random(seed);
         int scatterCount = 5;
         for (int i = 0; i < scatterCount; i++)
         {
             int x = rng.Next(2, Width - 2);
             int y = rng.Next(4, Height - 2);
-            if (x == DoorX && y >= Height - 3) continue;  // 门口通道(单格门列)留空
+            if (x == DoorX || x >= DoorX - 1 && x <= DoorX + 1) continue;  // 中间过道(人走)不留
             int hay = HayScatter[rng.Next(HayScatter.Length)];
             back.Tiles[x, y] = new StaticTile(back, sheet, BlendMode.Alpha, hay);
         }

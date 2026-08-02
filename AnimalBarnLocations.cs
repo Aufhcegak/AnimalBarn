@@ -10,6 +10,7 @@ public static class AnimalBarnLocations
     /// <summary>地图属性名:养殖场大堂标记。</summary>
     public const string PropBarn = "xiepe.AnimalBarn";
     public const string PropLobby = "xiepe.AnimalBarn.Lobby";
+    public const string PropHall = "xiepe.AnimalBarn.Hall";
     public const string PropRoomType = "xiepe.AnimalBarn.RoomType";
 
     /// <summary>是否养殖场地点(大堂或房间,查地图属性)。</summary>
@@ -19,6 +20,10 @@ public static class AnimalBarnLocations
     /// <summary>是否养殖场大堂。</summary>
     public static bool IsLobby(GameLocation loc)
         => loc?.map?.Properties?.ContainsKey(PropLobby) == true;
+
+    /// <summary>是否养殖场门厅(统一入口,终端选房间)。</summary>
+    public static bool IsHall(GameLocation loc)
+        => loc?.map?.Properties?.ContainsKey(PropHall) == true;
 
     /// <summary>是否养殖场动物房间(查 RoomType 属性)。</summary>
     public static bool TryGetRoomType(GameLocation loc, out RoomType roomType)
@@ -34,6 +39,13 @@ public static class AnimalBarnLocations
     {
         map.Properties[PropBarn] = "T";
         map.Properties[PropLobby] = "T";
+    }
+
+    /// <summary>给门厅地图打标记(统一入口,终端选房间)。</summary>
+    public static void MarkHall(xTile.Map map)
+    {
+        map.Properties[PropBarn] = "T";
+        map.Properties[PropHall] = "T";
     }
 
     /// <summary>给房间地图打标记。</summary>

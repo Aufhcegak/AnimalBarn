@@ -71,20 +71,21 @@ public static class IntegrationTest
                 if (lb.Tiles[x, 0] == null) topSealed = false;
             Check("lobby top sealed", topSealed);
 
-            // 5d. 每个房间门必须(a)门洞本身可通行(无 Buildings 阻挡→玩家能站上去触发 warp);
-            // (b)门后/门外一格必须是墙(绝不能越界/裸奔出图)。这是防"门进不去"和"踩空"的硬检查。
-            bool allDoorsOk = true;
-            foreach (var (room, dx, dy) in LobbyMapBuilder.DoorPositions)
-            {
-                bool doorOpen = lb.Tiles[dx, dy] == null;
-                // 门后一格:西门(x==1)→(0,dy);东门(x==Width-2)→(Width-1,dy);北门(y==1)→(dx,0)
-                int bx = dx, by = dy;
-                if (dx == 1) bx = 0; else if (dx == LobbyMapBuilder.Width - 2) bx = LobbyMapBuilder.Width - 1; else by = 0;
-                bool behindIsWall = lb.Tiles[bx, by] != null;
-                if (!doorOpen || !behindIsWall) allDoorsOk = false;
-                results.Add($"INFO door {room} @({dx},{dy}) open={doorOpen} behind({bx},{by})wall={behindIsWall}");
-            }
-            Check("all room doors open + walled behind", allDoorsOk);
+            // 5d. 门厅门(大堂唯一入口)必须:门洞可通行 + 门后是墙(防踩空)。整列封死只留这 1 格。
+            var (hx, hy) = (LobbyMapBuilder.HallDoor.X, LobbyMapBuilder.HallDoor.Y);
+            bool hallDoorOpen = lb.Tiles[hx, hy] == null;
+            bool hallDoorBehind = lb.Tiles[hx - 1, hy] != null;   // 门后 x=0 是墙
+            Check("hall door open + walled behind", hallDoorOpen && hallDoorBehind);
+            results.Add($"INFO hall door @({hx},{hy}) open={hallDoorOpen} behindWall={hallDoorBehind}");
+
+            // 5e. 门厅地图可加载 + 中央终端 tile 可通行(玩家能站上点终端)
+            var hall = new StardewValley.AnimalHouse("Maps\\" + HallMapBuilder.MapAssetName, HallMapBuilder.MapAssetName);
+            Check("hall map loads", hall.map != null && hall.map.Layers.Count >= 5);
+            Check("hall is marked", AnimalBarnLocations.IsHall(hall));
+            var hallBuildings = hall.map?.GetLayer("Buildings");
+            bool terminalOpen = hallBuildings == null || hallBuildings.Tiles[HallMapBuilder.TerminalTile.X, HallMapBuilder.TerminalTile.Y] == null;
+            Check("hall terminal tile passable", terminalOpen);
+            Check("hall bottom sealed 1 gap", hall.map != null && hall.map.GetLayer("Buildings")!.Tiles[HallMapBuilder.DoorX, HallMapBuilder.DoorY] == null);
 
             // 5c. 中枢菜单框源矩形是标准 60x60(可被 drawTextureBox 按 /3 九宫格切,不会碎)
             Check("menu box src 60x60", GetMenuBoxSrc().Width == 60 && GetMenuBoxSrc().Height == 60);
