@@ -54,6 +54,12 @@ public static class LobbyMapBuilder
 
     private static bool IsDoorTile(int x, int y) => DoorPositions.Any(d => d.X == x && d.Y == y);
 
+    /// <summary>中枢操作台位置(大堂中央,玩家点击打开中枢菜单)。</summary>
+    public static readonly Point HubTile = new(6, 4);
+
+    /// <summary>是否中枢台 tile(玩家点击打开中枢菜单)。</summary>
+    public static bool IsHubTile(int x, int y) => x == HubTile.X && y == HubTile.Y;
+
     public static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
     {
         if (e.Name.IsEquivalentTo("Maps/" + MapAssetName))
@@ -117,6 +123,13 @@ public static class LobbyMapBuilder
         // 门洞视觉:每个门洞在 Back 层放一块门垫地板(336),让缺口看起来是"门口"而不是破洞。
         foreach (var (_, x, y) in DoorPositions)
             back.Tiles[x, y] = new StaticTile(back, floorSheet, BlendMode.Alpha, FloorA);
+
+        // 中枢操作台(大堂中央):一张桌子 + 一侧椅子,玩家点击打开中枢菜单。
+        // townInterior 桌子 tile 参考索引:桌 179,椅 150(视觉点缀,不挡路)。
+        const int TableTile = 179;
+        const int ChairTile = 150;
+        buildings.Tiles[HubTile.X, HubTile.Y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, TableTile);
+        buildings.Tiles[HubTile.X + 1, HubTile.Y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, ChairTile);
 
         // AutoFeed 属性(AnimalHouse 自动喂食用;大堂无动物,但统一加无妨)
         map.Properties["AutoFeed"] = "T";

@@ -20,4 +20,25 @@ public class AnimalBarnRoom : StardewValley.AnimalHouse
             SettlementService.SettleRoom(this);
         }
     }
+
+    /// <summary>中枢操作台:玩家在大堂点击中枢台 tile → 打开中枢菜单(仅大堂有,房间内走原生交互)。</summary>
+    public override bool checkAction(xTile.Dimensions.Location tileLocation, xTile.Dimensions.Rectangle viewport, Farmer who)
+    {
+        if (RoomType == null &&
+            LobbyMapBuilder.IsHubTile(tileLocation.X, tileLocation.Y) &&
+            who != null && who.IsLocalPlayer)
+        {
+            var barn = ModEntry.Instance.Barn;
+            var building = ParentBuilding;
+            if (barn != null && building != null)
+            {
+                var state = barn.GetOrCreate(building);
+                var snapshot = HubSnapshotBuilder.Build(state);
+                Game1.activeClickableMenu = new HubMenu(snapshot, barn, building);
+                Game1.playSound("bigSelect");
+                return true;
+            }
+        }
+        return base.checkAction(tileLocation, viewport, who);
+    }
 }
