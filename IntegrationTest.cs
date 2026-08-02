@@ -56,7 +56,7 @@ public static class IntegrationTest
             var menu = new HubMenu(snap);
             Check("hub menu constructs", menu != null);
             Check("hub menu default tab", menu.CurrentTab == HubMenu.Tab.Status);
-            menu.receiveLeftClick(menu.xPositionOnScreen + 24 + HubMenu.TabWidth / 2, menu.yPositionOnScreen + 48 + HubMenu.TabHeight / 2, playSound: false); // 点"升级"页签
+            menu.receiveLeftClick(menu.xPositionOnScreen + 24 + (HubMenu.TabWidth + HubMenu.TabGap) + HubMenu.TabWidth / 2, menu.yPositionOnScreen + 48 + HubMenu.TabHeight / 2, playSound: false); // 点"升级"页签
             Check("hub menu tab switch", menu.CurrentTab == HubMenu.Tab.Upgrade);
             menu.receiveLeftClick(menu.xPositionOnScreen + 24 + 2 * (HubMenu.TabWidth + HubMenu.TabGap) + HubMenu.TabWidth / 2, menu.yPositionOnScreen + 48 + HubMenu.TabHeight / 2, playSound: false); // 点"商店"页签
             Check("hub menu tab switch 2", menu.CurrentTab == HubMenu.Tab.Shop);
