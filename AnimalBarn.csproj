@@ -16,6 +16,8 @@
   <ItemGroup>
     <!-- 排除独立测试工程(会与主程序集冲突的重复编译) -->
     <Compile Remove="logic_test/**" />
+    <!-- _buildtmp/ 是并行任务调试用的临时目录(与根目录源码重复,会触发 CS0101/CS0111) -->
+    <Compile Remove="_buildtmp/**" />
   </ItemGroup>
   <ItemGroup>
     <None Update="manifest.json" CopyToOutputDirectory="PreserveNewest" />
