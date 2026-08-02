@@ -9,6 +9,7 @@ public class ModEntry : Mod
     public override void Entry(IModHelper helper)
     {
         Instance = this;
+        helper.Events.Content.AssetRequested += BuildDataInjection.OnAssetRequested;
         this.Monitor.Log("AnimalBarn loaded.", LogLevel.Info);
     }
 }
