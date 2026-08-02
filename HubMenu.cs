@@ -359,7 +359,9 @@ public class HubMenu : IClickableMenu
         {
             var info = FarmAnimalCatalog.All[i];
             int rowY = yPositionOnScreen + RowTop + i * RowHeight;
-            var snap = _snapshot.Rooms.FirstOrDefault(r => r.Room == info.Room);
+            // 快照按【实际房间】查:羊(Sheep)与山羊共用羊场(Goat),必须 RoomFor 映射,
+            // 否则羊那行查不到快照 → 没有 (N/N) 括号。
+            var snap = _snapshot.Rooms.FirstOrDefault(r => r.Room == RoomDefinitions.RoomFor(info.Room));
             string name = AnimalDisplayNames.TryGetValue(info.TypeKey, out var cn) ? cn : info.TypeKey;
             string note = snap == null
                 ? ""
