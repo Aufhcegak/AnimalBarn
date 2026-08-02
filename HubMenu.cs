@@ -31,6 +31,13 @@ public class HubMenu : IClickableMenu
     private const int FooterY = 520;         // 底部固定区(干草购买/全部取走)
     private const int NoticeY = 580;         // 操作结果消息行
 
+    // 供集成测试对齐校验用(与上面一致,Internal 暴露)
+    internal const int ButtonColXConst = ButtonColX;
+    internal const int ButtonWidthConst = ButtonWidth;
+    internal const int ButtonHeightConst = ButtonHeight;
+    internal const int RowTopConst = RowTop;
+    internal const int RowHeightConst = RowHeight;
+
     private readonly HubSnapshot _snapshot;
     private Tab _tab = Tab.Status;
     private readonly List<Rectangle> _tabRects = new();

@@ -107,8 +107,9 @@ public static class RoomMapBuilder
         // 养殖场房间标记(原版类型 + 地图属性识别,不用自定义类避免存档序列化崩溃)
         AnimalBarnLocations.MarkRoom(map, roomType);
 
-        // ProduceArea 属性:动物随机站位矩形(中间 11x6 区域)
-        map.Properties["ProduceArea"] = "2,3,11,6";
+        // ProduceArea 属性:动物随机站位矩形(原版格式:空格分隔 "x y w h")。
+        // 注:1.6 游戏已不用此属性(全程序集无 ProduceArea 字面量),保留只为兼容旧版/其他模组读取。
+        map.Properties["ProduceArea"] = "2 3 11 6";
 
         // 出楼 warp:门洞中心 -> Farm。updateWarps() 读取本属性,ParentBuilding.updateInteriorWarps()
         // 把 TargetName=="Farm" 的 warp 改写为建筑 HumanDoor 绝对坐标。无此属性进入房间即崩溃。

@@ -106,6 +106,20 @@ public static class IntegrationTest
             menu.receiveLeftClick(menu.xPositionOnScreen + 24 + 2 * (HubMenu.TabWidth + HubMenu.TabGap) + HubMenu.TabWidth / 2, menu.yPositionOnScreen + 48 + HubMenu.TabHeight / 2, playSound: false); // 点"商店"页签
             Check("hub menu tab switch 2", menu.CurrentTab == HubMenu.Tab.Shop);
 
+            // 6b. 商店页 9 个动物按钮 hitbox 与绘制对齐:每个按钮中心点应在菜单范围内,
+            // 且与 DrawShop 的行 Y 一致(按钮 y = RowTop + i*RowHeight - 5)。点第 1 行按钮应触发
+            // BuyAnimal 逻辑(在无 State 的展示构造下应安全返回,不崩)。
+            int shopBtnX = menu.xPositionOnScreen + HubMenu.ButtonColXConst + HubMenu.ButtonWidthConst / 2;
+            int row0Y = menu.yPositionOnScreen + HubMenu.RowTopConst - 5 + HubMenu.ButtonHeightConst / 2;
+            bool row0InMenu = shopBtnX > menu.xPositionOnScreen && shopBtnX < menu.xPositionOnScreen + 1000
+                && row0Y > menu.yPositionOnScreen && row0Y < menu.yPositionOnScreen + 620;
+            Check("shop row0 button inside menu", row0InMenu);
+            // 第 9 行(最后一只动物,羊)按钮也应在菜单内
+            int row8Y = menu.yPositionOnScreen + HubMenu.RowTopConst + 8 * HubMenu.RowHeightConst - 5 + HubMenu.ButtonHeightConst / 2;
+            Check("shop row8 (sheep) button inside menu", row8Y < menu.yPositionOnScreen + 620);
+            menu.receiveLeftClick(shopBtnX, row0Y, playSound: false);   // 点"购买 +1"(无 State → 安全返回)
+            Check("shop buy click no-crash (display mode)", true);
+
             // 7. 8 个房间地图全部可加载且要素齐全(干草槽/自动喂食/生产区/出口)
             foreach (var def in RoomDefinitions.All)
             {
