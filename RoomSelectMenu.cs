@@ -70,7 +70,8 @@ public class RoomSelectMenu : IClickableMenu
 
                 RoomAnimalRenderer.EnsureVisibleOnEnter(target);
                 Game1.activeClickableMenu = null;   // 关菜单
-                Game1.warpFarmer(target.NameOrUniqueName, RoomMapBuilder.DoorX, RoomMapBuilder.DoorY - 1, 0);
+                // 入口在北墙中央:落点在北门下方(DoorX, 3),玩家朝下进门。
+                Game1.warpFarmer(target.NameOrUniqueName, RoomMapBuilder.DoorX, 3, 2);
                 Game1.playSound("smallSelect");
                 return;
             }

@@ -156,26 +156,18 @@ public static class RoomManager
     /// <summary>测试/诊断用。</summary>
     public static int Count => Rooms.Count + Halls.Count;
 
-    /// <summary>在房间铺左右两个动物圈(木围栏) + 中间过道。
-    /// 圈:y=3..8, 左圈 x=2..6, 右圈 x=8..12, 中间过道 x=7(DoorX)贯穿。
-    /// 动物在圈里走动吃食,玩家走中间过道 —— 普通养殖场的样子。</summary>
+    /// <summary>在房间铺围栏:中央竖走道 x=DoorX(北入口→南出口,人走)两侧各 1 列栅栏
+    /// (x=DoorX-1 / x=DoorX+1),栅栏外侧是左右两个大动物区。动物在动物区里,玩家走中央走道。
+    /// 栅栏竖向(y=3..9),北入口行(y=2?)不留 —— 栅栏从槽行 y=3 到门口 y=9。</summary>
     private static void BuildPenFences(GameLocation loc)
     {
-        int w = RoomMapBuilder.Width;
         int xMid = RoomMapBuilder.DoorX;
-        // 左圈右边界 x=6 一列(圈内动物,圈外过道)
-        FenceColumn(loc, 6, fence: true);
-        // 右圈左边界 x=8 一列
-        FenceColumn(loc, 8, fence: true);
-        // 两圈之间过道 x=7 贯通(不设围栏)
-    }
-
-    private static void FenceColumn(GameLocation loc, int x, bool fence)
-    {
-        for (int y = 3; y <= 8; y++)
+        // 中央走道两侧各 1 列栅栏
+        for (int y = 3; y <= 9; y++)
         {
-            var tile = new Vector2(x, y);
-            loc.objects[tile] = new Fence(tile, Fence.woodFenceId, isGate: false);
+            loc.objects[new Vector2(xMid - 1, y)] = new Fence(new Vector2(xMid - 1, y), Fence.woodFenceId, isGate: false);
+            loc.objects[new Vector2(xMid + 1, y)] = new Fence(new Vector2(xMid + 1, y), Fence.woodFenceId, isGate: false);
         }
+        // NOTE:动物区 x=1..xMid-2 / xMid+2..13 是动物自由区;玩家走中央走道 xMid 上下贯通。
     }
 }

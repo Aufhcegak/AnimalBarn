@@ -129,7 +129,8 @@ public static class IntegrationTest
                 Check($"room {def.Room} loads", map != null && map.Layers.Count >= 5);
                 Check($"room {def.Room} AutoFeed", map != null && map.Properties.ContainsKey("AutoFeed"));
                 Check($"room {def.Room} ProduceArea", map != null && map.Properties.ContainsKey("ProduceArea"));
-                Check($"room {def.Room} Trough", map?.GetLayer("Back").Tiles[5, 3]?.Properties.ContainsKey("Trough") == true);
+                Check($"room {def.Room} Trough", map?.GetLayer("Back").Tiles[5, 3]?.Properties.ContainsKey("Trough") == true);   // 槽行全宽,避开中央列 x=7
+                Check($"room {def.Room} north entrance", map != null && map.GetLayer("Buildings")!.Tiles[RoomMapBuilder.DoorX, 1] == null);   // 北墙中央入口开
                 Check($"room {def.Room} Warp", room.warps.Any(w => w.TargetName == "Farm"));
             }
 

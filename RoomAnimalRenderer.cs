@@ -87,19 +87,22 @@ public static class RoomAnimalRenderer
         }
     }
 
-    /// <summary>在房间活动区里随机挑一个可通行格(像素坐标)。优先动物圈(y4..围栏上行),
-    /// 兜底门洞上方一格(保证总能放下)。可通行 = Buildings 层该格无阻挡 tile(墙/围栏/封底)。</summary>
+    /// <summary>在房间活动区里随机挑一个可通行格(像素坐标)。优先动物区(中央走道两侧大片区域,
+    /// x 避开中央走道列),兜底北入口下方中央走道(进房间的地方)。</summary>
     private static Vector2 FindOpenPosition(AnimalHouse ah)
     {
-        int w = RoomMapBuilder.Width, h = RoomMapBuilder.Height;
         var buildings = ah.map?.GetLayer("Buildings");
+        int xMid = RoomMapBuilder.DoorX;
         for (int tries = 0; tries < 12; tries++)
         {
-            int x = Game1.random.Next(1, w - 1);
-            int y = Game1.random.Next(4, h - 2);          // y4..h-3(动物圈/活动区,避开 y0-2 墙、y3 槽行、底行)
+            int x = Game1.random.Next(2) == 0
+                ? Game1.random.Next(1, xMid - 1)     // 左动物区 x=1..xMid-2
+                : Game1.random.Next(xMid + 2, RoomMapBuilder.Width - 1);  // 右动物区 x=xMid+2..13
+            int y = Game1.random.Next(4, RoomMapBuilder.Height - 2);
             if (buildings == null || buildings.Tiles[x, y] == null)
                 return new Vector2(x * 64f, y * 64f);
         }
-        return new Vector2(RoomMapBuilder.DoorX * 64f, (RoomMapBuilder.DoorY - 3) * 64f);  // 兜底:门口上方
+        // 兜底:北入口下方中央走道 (DoorX, 4)
+        return new Vector2(xMid * 64f, 4 * 64f);
     }
 }

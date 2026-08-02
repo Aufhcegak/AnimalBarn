@@ -64,47 +64,43 @@ public static class RoomMapBuilder
         // 地板:全铺该房主题地板
         BarnMapRecipe.FillFloor(back, sheet, Width, Height, floorTile);
 
-        // 顶部 3 行墙体(顶墙框 + 墙带 + 墙裙) + 窗户点缀;房间无北墙门(门在南)
+        // 顶部 3 行墙体(顶墙框 + 墙带 + 墙裙),北墙中央入口(1 格门洞,DoorX)
         int[] windows = { 3, 7, 11 };
-        BarnMapRecipe.BuildWalls(back, buildings, sheet, Width, Height, northDoorXs: null, windows);
+        int[] northDoors = { DoorX };
+        BarnMapRecipe.BuildWalls(back, buildings, sheet, Width, Height, northDoors, windows);
+        BarnMapRecipe.CutNorthDoor(buildings, DoorX);
         BarnMapRecipe.AddWallDecor(buildings, sheet, Width, cobweb: true, hook: true);
 
         // 封死左右两列(房间无侧门;防穿墙:isTilePassable 对越界/null tile 当 passable)
         BarnMapRecipe.SealSides(buildings, sheet, Width, Height);
 
-        // 边界环:底行封底,只留中央 1 格出口门洞(x=DoorX)。此前 3 格缺口(x=6,7,8)只有中间格有 warp,
-        // 玩家走到两侧缺口格再往下就踩空 → 收窄成 1 格(原版门宽),两侧铺门框柱收口(视觉+物理双重保险)。
+        // 边界环:底行封底,只留中央 1 格出口门洞(x=DoorX,南墙底边出口)。门框柱收口。
         int[] southDoors = { DoorX };
         BarnMapRecipe.BuildBoundary(buildings, sheet, Width, Height, southDoors);
         BarnMapRecipe.PlaceWallPost(buildings, sheet, DoorX - 1, DoorY, westFacing: true);
         BarnMapRecipe.PlaceWallPost(buildings, sheet, DoorX + 1, DoorY, westFacing: false);
 
-        // 干草槽:Back 层 y=3(活动区第一行,墙裙 y2 之下,无遮挡)一行加 Trough 属性
+        // 干草槽:Back 层 y=3(活动区第一行,墙裙 y2 之下,无遮挡)加 Trough 属性
         // (AnimalHouse.feedAllAnimals 扫描 "Trough"/"Back" 属性喂食),并铺干草块(18)做视觉标识。
-        // 只铺在左右两圈内(x=2..5 与 x=9..12),中间过道 x=7 不铺(人是走道,不放槽)。
-        for (int x = 2; x <= 5; x++)
+        // 全宽一排(动物区就在中间大片区域),留出北入口列。
+        for (int x = 2; x <= Width - 3; x++)
         {
+            if (x == DoorX) continue;   // 北入口列留空
             back.Tiles[x, 3] = new StaticTile(back, sheet, BlendMode.Alpha, 18);
             back.Tiles[x, 3].Properties["Trough"] = "T";
         }
-        for (int x = 9; x <= 12; x++)
-        {
-            back.Tiles[x, 3] = new StaticTile(back, sheet, BlendMode.Alpha, 18);
-            back.Tiles[x, 3].Properties["Trough"] = "T";
-        }
-        // 中间过道 x=7 铺浅色板(人的走道,视觉区分)
-        for (int y = 3; y <= 9; y++)
+        // 中央竖走道(北入口→南出口,浅色板,人走),x=DoorX 贯穿
+        for (int y = 3; y <= DoorY; y++)
             back.Tiles[DoorX, y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorLight);
 
-        // 干草点缀:在左右两圈内(y>=4)撒几撮干草,营造畜棚氛围(每房种子固定)。
-        // 只在圈内(x 2..5 / 9..12),中间过道不留。
+        // 干草点缀:在中央大片区域(y>=4)撒几撮干草,营造畜棚氛围(每房种子固定)。
         var rng = new System.Random(seed);
         int scatterCount = 5;
         for (int i = 0; i < scatterCount; i++)
         {
             int x = rng.Next(2, Width - 2);
             int y = rng.Next(4, Height - 2);
-            if (x == DoorX || x >= DoorX - 1 && x <= DoorX + 1) continue;  // 中间过道(人走)不留
+            if (x == DoorX) continue;   // 中央走道不留
             int hay = HayScatter[rng.Next(HayScatter.Length)];
             back.Tiles[x, y] = new StaticTile(back, sheet, BlendMode.Alpha, hay);
         }
