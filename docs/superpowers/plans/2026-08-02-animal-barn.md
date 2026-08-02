@@ -10,6 +10,11 @@
 
 **关键已验证事实(反编译 1.6.15,勿重推导):**
 - `AnimalHouse` 在 **`StardewValley` 根命名空间**(不是 `StardewValley.Locations`),构造 `()` 和 `(string, string)` 两个都有。已编译验证。
+- **代码生成地图的 3 个坑(反编译 xTile 确认,勿重推导):**
+  1. `Layer` 的 tile 尺寸**必须 64x64**(不是 16x16)!`m_tileSize` 是全局静态,游戏按 64 算地图尺寸/碰撞,16 会让地图缩 4 倍 → 玩家穿墙。
+  2. `TileSheet` 构造函数用 MonsterArena 的 6 参形式 `(string id, Map map, string imageSource, Size sheetSize, Size tileSize)`。
+  3. **出口 Warp 必须手动加地图属性** `Warp: "6 8 Farm 0 0"`(指向 Farm)!`Building.updateInteriorWarps` 只重定向已存在的 warp,不会创建;室内 `loadObjects` 读 `map.Properties["Warp"]` 生成 warp,`Building` 进门用 `gameLocation.warps[0]`——**零 warp 会进门崩溃**。`updateInteriorWarps` 只重写 TargetName == "Farm" 或父地点名的 warp,所以目标必须是 Farm。
+  4. `Map.Properties` 是 `PropertyCollection`,赋值用 `map.Properties["AutoFeed"] = "T"`(隐式字符串转换),没有 `xTile.Properties.Property` 类。
 - `BuildingData`/`BuildingMaterial`/`BuildingSkin` 在 **`StardewValley.GameData.Buildings`**(GameData.dll),字段全部确认(Size/HumanDoor/BuildDays/BuildCost/BuildMaterials/Builder/IndoorMap/IndoorMapType/MaxOccupants/ValidOccupantTypes 等)。
 - `CarpenterMenu` 构造遍历 `Game1.buildingData`,凡 `Builder == 菜单Builder`(Robin)且 `BuildCondition` 通过者自动成为蓝图。注入 `Data/Buildings` 数据行即可,零 Harmony。
 - `Building` 用 `IndoorMap`(Maps\ 前缀)+ `IndoorMapType`(Type.GetType 反射)创建室内;`createIndoors` 是 `protected virtual`,自定义 Building 子类可覆写。

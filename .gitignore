@@ -3,3 +3,5 @@ obj/
 *.user
 .vs/
 AnimalBarn.dll
+autotest.txt
+autotest_result.txt
