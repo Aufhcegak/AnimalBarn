@@ -1,6 +1,6 @@
 namespace AnimalBarn;
 
-/// <summary>单个动物房间的状态快照。</summary>
+/// <summary>单个动物房间的状态快照(可变字段:菜单操作后刷新 UI)。</summary>
 public record RoomSnapshot(
     RoomType Room,
     string DisplayName,
@@ -8,10 +8,16 @@ public record RoomSnapshot(
     int Count,
     int Capacity,
     int UpgradeLevel,
-    int ProduceCount
-);
+    int ProduceCount,
+    Dictionary<string, int>? ProduceStacks = null  // 房间产品栈(QualifiedId -> 数量);可选,测试可不传
+)
+{
+    public int Count { get; set; } = Count;
+    public int Capacity { get; set; } = Capacity;
+    public int ProduceCount { get; set; } = ProduceCount;
+}
 
-/// <summary>中枢菜单的状态快照(打开时由 BarnManager 生成,菜单本身不查实时状态)。</summary>
+/// <summary>中枢菜单的状态快照(可变字段:菜单操作后刷新 UI)。</summary>
 public record HubSnapshot(
     int OverallLevel,
     int HayStock,
@@ -20,4 +26,8 @@ public record HubSnapshot(
     bool CanUpgradeOverall,
     int OverallUpgradeCost,
     string OverallUpgradeUnlocks
-);
+)
+{
+    public int HayStock { get; set; } = HayStock;
+    public int ProduceCount { get; set; } = ProduceCount;
+}
