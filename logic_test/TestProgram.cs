@@ -45,7 +45,7 @@ Check("hay consumed 0", hay2.HayConsumed == 0);
 Check("hungry count 1", hay2.HungryAdults == 1);
 
 // 5. 产品入库
-Check("produce buffered", l2.ProduceStacks.ContainsKey("(O)176") && l2.ProduceStacks["(O)176"] == 1);
+Check("produce buffered", l2.ProduceStacks.ContainsKey("(O)176|0") && l2.ProduceStacks["(O)176|0"] == 1);
 
 // 6. 生产间隔:鸡每天产,鸭 2 天
 var duck = new LedgerAnimal { Room = RoomType.Duck, AgeDays = 10, Happiness = 200, Fullness = 0, DaysSinceProduce = 1 };
@@ -115,13 +115,13 @@ Check("goat cap 90", UpgradeSystem.CapacityAt(RoomType.Goat, 5) == 90);
 Check("friendship lvl1", UpgradeSystem.FriendshipGainAt(1) == 6);
 Check("friendship lvl3", UpgradeSystem.FriendshipGainAt(3) == 9);
 
-// --- RoomDefinitions:羊与山羊共用羊场(9 动物 8 房),买羊/判解锁/容量都要落到 Goat 房 ---
-Check("RoomFor sheep -> goat house", RoomDefinitions.RoomFor(RoomType.Sheep) == RoomType.Goat);
+// --- RoomDefinitions:9 种动物各一间房(羊/山羊已分开),RoomFor 全 1:1(兼容旧存档) ---
+Check("RoomFor sheep -> sheep house", RoomDefinitions.RoomFor(RoomType.Sheep) == RoomType.Sheep);
 Check("RoomFor goat -> goat house", RoomDefinitions.RoomFor(RoomType.Goat) == RoomType.Goat);
 Check("RoomFor chicken 1:1", RoomDefinitions.RoomFor(RoomType.Chicken) == RoomType.Chicken);
 Check("RoomFor cow 1:1", RoomDefinitions.RoomFor(RoomType.Cow) == RoomType.Cow);
-Check("Get(sheep house) via RoomFor no-throw", RoomDefinitions.Get(RoomDefinitions.RoomFor(RoomType.Sheep)).DisplayName == "羊场");
-Check("RoomDefinitions has 8 rooms", RoomDefinitions.All.Length == 8);
+Check("Get(sheep) via RoomFor no-throw", RoomDefinitions.Get(RoomDefinitions.RoomFor(RoomType.Sheep)).DisplayName == "养羊场");
+Check("RoomDefinitions has 9 rooms", RoomDefinitions.All.Length == 9);
 Check("catalog has 9 animals", FarmAnimalCatalog.All.Length == 9);
 Check("friendship lvl5", UpgradeSystem.FriendshipGainAt(5) == 12);
 Check("friendship clamp low", UpgradeSystem.FriendshipGainAt(0) == 6);

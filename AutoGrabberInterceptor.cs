@@ -36,13 +36,19 @@ public static class AutoGrabberInterceptor
 
         var state = Barn.GetOrCreate(l.ParentBuilding);
         var roomState = state.GetRoom(roomType);
-        roomState.ProduceStacks.TryGetValue(o.QualifiedItemId, out int n);
-        roomState.ProduceStacks[o.QualifiedItemId] = n + o.Stack;
+        // 按星级分桶存储:key = "物品ID|星级"(0=普通 1=银 2=金 4=铱),蛋/奶按星级分开
+        string key = ProduceKey(o.QualifiedItemId, o.Quality);
+        roomState.ProduceStacks.TryGetValue(key, out int n);
+        roomState.ProduceStacks[key] = n + o.Stack;
         roomState.ProduceCount += o.Stack;
         if (playSound) l.playSound("coin");
         __result = true;
         return false;  // 跳过原版掉地
     }
+
+    /// <summary>产品分桶 key:物品ID|星级。</summary>
+    public static string ProduceKey(string qualifiedId, int quality)
+        => qualifiedId + "|" + quality;
     /// <summary>动物产品的 ID 集合(FarmAnimalCatalog 的 ProduceId + 大号/deluxe 变体,
     /// 原版在高好感/幸运下产出这些变体 ID)。其它模组动物的产物不在集合内,
     /// 会落回原版掉地 —— 可接受。</summary>

@@ -103,9 +103,17 @@ public class AnimalLedger
 
     public void AddProduce(string qualifiedId)
     {
+        // 台账动物默认产普通(0 星);星级产品只来自实体动物(拦截器按星级分桶)
+        AddProduceWithQuality(qualifiedId, 0);
+    }
+
+    /// <summary>按星级入桶:key = "物品ID|星级"。星级产品(实体动物)与普通(台账)分开存。</summary>
+    public void AddProduceWithQuality(string qualifiedId, int quality)
+    {
         ProduceCount++;
-        ProduceStacks.TryGetValue(qualifiedId, out int n);
-        ProduceStacks[qualifiedId] = n + 1;
+        string key = qualifiedId + "|" + quality;
+        ProduceStacks.TryGetValue(key, out int n);
+        ProduceStacks[key] = n + 1;
     }
 
     /// <summary>生产判定:用结算前的 DaysSinceProduce 判阈值(产出的那天算新周期第 1 天),
