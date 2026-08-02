@@ -72,6 +72,50 @@ public static class IntegrationTest
                 Check($"room {def.Room} Trough", map?.GetLayer("Back").Tiles[5, 2]?.Properties.ContainsKey("Trough") == true);
                 Check($"room {def.Room} Warp", room.warps.Any(w => w.TargetName == "Farm"));
             }
+
+            // 8. 完整业务流程(标题画面用真实对象跑通,不碰存档):
+            //    建建筑 → 拿状态 → 买动物进台账 → 结算(产产品/好感/干草)→ 取产品
+            var barn = ModEntry.Instance.Barn;
+            var building = Building.CreateInstanceFromId("xiepe.AnimalBarn", new Vector2(2, 2));
+            Check("flow: building created", building != null);
+
+            var state = barn.GetOrCreate(building);
+            state.HayStock = 500;
+            state.OverallLevel = 1;   // 1 级:养鸡场解锁
+
+            // 买 3 只鸡进台账(模拟中枢购买)
+            var roomState = state.GetRoom(RoomType.Chicken);
+            for (int i = 0; i < 3; i++)
+            {
+                roomState.Animals.Add(new LedgerAnimal
+                {
+                    Id = 1000 + i, Room = RoomType.Chicken, TypeKey = "White Chicken",
+                    AgeDays = 10,   // 成年
+                    Friendship = 0, Happiness = 200, Fullness = 0,
+                    DaysSinceProduce = 1, ProduceCount = 0, OwnerId = 1,
+                });
+            }
+            Check("flow: 3 chickens bought", roomState.Animals.Count == 3);
+
+            // 结算(模拟睡眠 DayUpdate → SettlementService.SettleRoom)
+            var ledger = AnimalLedger.FromRoom(roomState);
+            var ctx = new SettleContext(FriendshipGain: UpgradeSystem.FriendshipGainAt(state.OverallLevel), HappinessGain: 20);
+            var hay = ledger.SettleDay(ctx, state.HayStock);
+            state.HayStock -= hay.HayConsumed;
+            ledger.SaveTo(roomState);
+            Check("flow: settle produced", roomState.ProduceCount > 0);
+            Check("flow: friendship grew", roomState.Animals[0].Friendship > 0);
+            Check("flow: hay consumed", hay.HayConsumed > 0 && state.HayStock < 500);
+
+            // 取产品(模拟仓库取走)
+            int before = roomState.ProduceCount;
+            roomState.ProduceStacks.Clear();
+            roomState.ProduceCount = 0;
+            Check("flow: warehouse cleared", before > 0 && roomState.ProduceCount == 0);
+
+            // 升级解锁:2 级开养猪场
+            state.OverallLevel = 2;
+            Check("flow: pig room unlocks at lvl2", UpgradeSystem.IsUnlocked(RoomType.Pig, state.OverallLevel));
         }
         catch (Exception ex)
         {
