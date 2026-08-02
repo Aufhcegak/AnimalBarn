@@ -8,6 +8,12 @@
 
 **Tech Stack:** .NET 6, C# 12, SMAPI 4.5.1, Stardew Valley 1.6.15, Harmony 2.3.3, xTile(代码生成室内地图), ModBuildConfig 4.4.0。参考 mod:`MonsterArena`(代码生成地图配方)、`JunimoTaskScheduler`(logic_test 无头测试)。
 
+**已验证的 API 陷阱(勿重推导):**
+- `Farmer.addItemToInventoryBool(Item)` 在**部分放入**时返回 false,但物品**已经有一部分进了背包**(调用后传入 item 的 `Stack` 被减到"放不下的剩余量")。想算实际放入量:`actual = handing - item.Stack`(调用后)。直接 `return 0` 会导致干草既在库存又在背包(重复)。
+- `Farmer.Money` setter 对**非本地玩家抛异常**("Cannot change another farmer's money")——买干草/买动物必须用本地 farmer(中枢商店天然满足)。
+- `Farmer.removeItemFromInventory(Item)` 用 `Items.IndexOf`(引用相等)——`Object` 无 Equals 覆写,安全。
+- `ItemRegistry.Create("(O)178", 0)` 会 yield **stack 1**(FixStackSize 下限)——调用方要防 `quantity <= 0`。
+
 **关键已验证事实(反编译 1.6.15,勿重推导):**
 - `AnimalHouse` 在 **`StardewValley` 根命名空间**(不是 `StardewValley.Locations`),构造 `()` 和 `(string, string)` 两个都有。已编译验证。
 - **代码生成地图的 3 个坑(反编译 xTile 确认,勿重推导):**

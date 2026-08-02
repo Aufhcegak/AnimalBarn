@@ -8,48 +8,43 @@ using xTile.Tiles;
 
 namespace AnimalBarn;
 
-/// <summary>代码生成大堂地图。复用 MonsterArena 的 tile 配方(地板/墙/边界环防穿墙)。</summary>
+/// <summary>代码生成大堂地图。墙体照搬原版畜棚(coopTiles)配方,地板/装饰全新布置,渲染干净。
 /// <remarks>
 /// 关键已验证事实(反编译 xTile.dll + Stardew Valley.dll,1.6.15):
-/// 1. Layer.m_tileSize 是共享 static —— 运行时地图 tile 尺寸必须是 64x64,
-///    否则 GameLocation.IsOutOfBounds(DisplayWidth = LayerSize * m_tileSize) 算错,玩家会穿墙(MonsterArena 教训)。
-/// 2. isTilePassable() 对越界 tile 返回 null→passable,玩家能走出地图边缘进虚空。
-///    对策:Buildings 层最外圈全部铺阻挡 tile。
-/// 3. 出楼 warp 必须写进地图的 "Warp" 属性:updateWarps()(室内构造时经 loadObjects 调用)读取该属性,
-///    随后 ParentBuilding.updateInteriorWarps() 把目标改写为建筑 HumanDoor 位置。仅留门洞不会有出口。
-/// </remarks>
+/// 1. Layer.m_tileSize 是共享 static —— 运行时地图 tile 尺寸必须是 64x64,否则碰撞边界算错穿墙。
+/// 2. isTilePassable() 对越界 tile 返回 null→passable → 对策:Buildings 层最外圈全部铺阻挡 tile。
+/// 3. 出楼 warp 必须写进地图 "Warp" 属性:updateWarps() 读取后 ParentBuilding.updateInteriorWarps()
+///    把目标改写为建筑 HumanDoor 位置。仅留门洞不会有出口。
+/// 4. 墙/地板 tilesheet 是 Maps\coopTiles(原版畜棚用),不是 townInterior(那是纯家具表,用了必乱码)。
+/// </remarks></summary>
 public static class LobbyMapBuilder
 {
     public const string MapAssetName = "xiepe.AnimalBarn.Lobby";  // SMAPI asset name (Maps/ prefix added by BuildingData.IndoorMap)
     public const int Width = 13;
     public const int Height = 9;
 
-    // FarmHouse1 木地板参考 tile 索引(MonsterArena 已验证):
-    // 地板 = walls_and_floors 336/337(隔行 352/353),底座 = 32,墙 = townInterior 1/2/3(顶),64/68(侧),160/130(底角)
-    private const int FloorA = 336;
-    private const int FloorB = 352;
-    private const int Baseboard = 32;
-    private const int WallTop = 1;
-    private const int WallSide = 64;
-    private const int WallCorner = 160;
+    // 大堂地板(coopTiles 干净木地板;与原版一致用 12,中央走道可用 46 提亮)
+    private const int FloorWood = 12;
+    private const int FloorWalkway = 46;   // 浅色木板,铺入口→中枢的走道
 
     /// <summary>底部门洞中心 tile X(供后续任务在入口铺地板/交互用)。</summary>
     public const int DoorX = Width / 2;
     public const int DoorY = Height - 1;
 
-    /// <summary>8 个房间门洞(墙缺口):(房间, 门洞 tile 坐标)。玩家站在缺口 tile 上 →
-    /// LobbyDoors.TryEnterDoor 触发 warp 进房间。北墙 3 门在底座行 y=1(y=0 顶墙保留 → 1 格高门洞,
-    /// 与原版门一致),西/东墙各 2 门,南墙 1 门(羊场门,避开出口门洞 x=5-7)。</summary>
+    /// <summary>8 个房间门(墙缺口):(房间, 门洞 tile 坐标)。玩家站到门洞格 → LobbyDoors.TryEnterDoor warp 进房间。
+    /// 北墙 3 门在墙带行 y=1(y0 顶墙挡着,门外是墙,安全)。
+    /// 西/东门【不再贴地图边缘】(贴边的门外一格越界 → isTilePassable(null)=passable → 一步踩空),
+    /// 改成凹进来一格(x=1 / x=Width-2),门后(x=0 / x=Width-1)仍是墙 → 物理上不可能走出地图,杜绝踩空。</summary>
     public static readonly (RoomType Room, int X, int Y)[] DoorPositions =
     {
-        (RoomType.Chicken,  3, 1),   // 北墙(底座行)
+        (RoomType.Chicken,  3, 1),   // 北墙(墙带行 y=1)
         (RoomType.Duck,     6, 1),
-        (RoomType.Rabbit,   9, 1),
-        (RoomType.Dinosaur, 0, 4),   // 西墙
-        (RoomType.Ostrich,  12, 4),  // 东墙
-        (RoomType.Pig,      12, 7),
-        (RoomType.Cow,      0, 7),
-        (RoomType.Goat,     9, 8),   // 南墙(避开出口 x=5-7)
+        (RoomType.Rabbit,   10, 1),  // 北墙(避开挂钉 x=9,挪到 x=10)
+        (RoomType.Dinosaur, 1, 4),   // 西墙(凹进:门后 x=0 是墙)
+        (RoomType.Goat,     1, 5),   // 西墙
+        (RoomType.Cow,      1, 7),   // 西墙
+        (RoomType.Ostrich,  11, 4),  // 东墙(凹进:门后 x=12 是墙)
+        (RoomType.Pig,      11, 7),  // 东墙
     };
 
     private static bool IsDoorTile(int x, int y) => DoorPositions.Any(d => d.X == x && d.Y == y);
@@ -59,6 +54,21 @@ public static class LobbyMapBuilder
 
     /// <summary>是否中枢台 tile(玩家点击打开中枢菜单)。</summary>
     public static bool IsHubTile(int x, int y) => x == HubTile.X && y == HubTile.Y;
+
+    /// <summary>房间 → plaque tilesheet 列(与 assets/AnimalBarnPlaques.png 的图标顺序一致:
+    /// 0鸡 1鸭 2兔 3恐龙 4鸵鸟 5猪 6山羊 7牛)。羊场(Goat,绵羊+山羊共用)挂山羊牌。</summary>
+    private static int PlaqueIndex(RoomType room) => room switch
+    {
+        RoomType.Chicken => 0,
+        RoomType.Duck => 1,
+        RoomType.Rabbit => 2,
+        RoomType.Dinosaur => 3,
+        RoomType.Ostrich => 4,
+        RoomType.Pig => 5,
+        RoomType.Goat => 6,
+        RoomType.Cow => 7,
+        _ => 0,
+    };
 
     public static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
     {
@@ -70,74 +80,70 @@ public static class LobbyMapBuilder
 
     public static Map BuildMap()
     {
-        var map = new Map();
-        // 五层:Back/Buildings/Front/Paths/AlwaysFront(游戏要求,缺一崩)
-        // 注意 Layer 构造的 tileSize 必须 64x64:该字段是 static 共享的,运行时游戏按 64 计算碰撞边界。
-        var back = new Layer("Back", map, new Size(Width, Height), new Size(64, 64));
-        var buildings = new Layer("Buildings", map, new Size(Width, Height), new Size(64, 64));
-        var front = new Layer("Front", map, new Size(Width, Height), new Size(64, 64));
-        var paths = new Layer("Paths", map, new Size(Width, Height), new Size(64, 64));
-        var alwaysFront = new Layer("AlwaysFront", map, new Size(Width, Height), new Size(64, 64));
-        map.AddLayer(back);
-        map.AddLayer(buildings);
-        map.AddLayer(front);
-        map.AddLayer(paths);
-        map.AddLayer(alwaysFront);
+        var (map, back, buildings, front, paths, alwaysFront, sheet) =
+            BarnMapRecipe.CreateMapShell(Width, Height);
 
-        // 贴图集(构造签名:id, map, imageSource, sheetSize, tileSize —— 与 MonsterArena 一致)
-        var floorSheet = new TileSheet("walls_and_floors", map, "Maps/walls_and_floors", new Size(512, 384), new Size(16, 16));
-        var interiorSheet = new TileSheet("townInterior", map, "Maps/townInterior", new Size(512, 512), new Size(16, 16));
-        map.AddTileSheet(floorSheet);
-        map.AddTileSheet(interiorSheet);
+        // 地板:全铺干净木地板
+        BarnMapRecipe.FillFloor(back, sheet, Width, Height, FloorWood);
 
-        // 地板:全铺 336,隔行 352(视觉交错)
-        for (int x = 0; x < Width; x++)
-            for (int y = 0; y < Height; y++)
-                back.Tiles[x, y] = new StaticTile(back, floorSheet, BlendMode.Alpha, (y % 2 == 0) ? FloorA : FloorB);
+        // 顶部 3 行墙体(顶墙框 + 墙带 + 墙裙),北墙 3 门洞 + 窗户点缀
+        // 北墙门避开挂钉(x=2 与 x=Width-4=9 是挂钉位):北门选 x=3,6,9 → 9 被挂钉占了,改用 x=10(窗位移到 1,2,11)
+        int[] northDoors = { 3, 6, 10 };
+        int[] windows = { 1, 2, 11 };   // 墙带窗(避开门洞与挂钉 x=2,x=9)
+        BarnMapRecipe.BuildWalls(back, buildings, sheet, Width, Height, northDoors, windows);
+        foreach (int x in northDoors) BarnMapRecipe.CutNorthDoor(buildings, x);
+        BarnMapRecipe.AddWallDecor(buildings, sheet, Width, cobweb: true, hook: true);
 
-        // 顶墙:WallTop 一行 + 下面 Baseboard 一行(封底)。
-        // 北墙 3 扇房间门开在底座行 y=1(门洞上方 y=0 顶墙保留 → 1 格高门洞,与原版门一致)。
-        for (int x = 0; x < Width; x++)
-        {
-            buildings.Tiles[x, 0] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallTop);
-            if (!IsDoorTile(x, 1))
-                buildings.Tiles[x, 1] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, Baseboard);
-        }
-        // 两侧墙(西墙门:恐龙 y=4、牛 y=7;东墙门:鸵鸟 y=4、猪 y=7 —— 门洞位置留空)
-        for (int y = 0; y < Height; y++)
-        {
-            if (!IsDoorTile(0, y))
-                buildings.Tiles[0, y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallSide);
-            if (!IsDoorTile(Width - 1, y))
-                buildings.Tiles[Width - 1, y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallSide);
-        }
-        // 四角
-        buildings.Tiles[0, 0] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallCorner);
-        buildings.Tiles[Width - 1, 0] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallCorner);
-        // 边界环:底行全 Baseboard(防穿墙),中央留 3 格出口门洞 (x=5,6,7) + 羊场门洞 (9,8)
-        for (int x = 0; x < Width; x++)
-            if (x < Width / 2 - 1 || x > Width / 2 + 1)   // 跳过出口门洞 x=5,6,7
-                if (!IsDoorTile(x, Height - 1))
-                    buildings.Tiles[x, Height - 1] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, Baseboard);
+        // 西/东墙门【凹进门龛】:门洞在内列(x=1 / x=Width-2),门后(x=0 / x=Width-1)保持实心墙。
+        // 这样玩家朝门走一格就 warp,绝不可能走出地图(门后是墙,无越界踩空)。左右两列整列封死。
+        // 西门 y=4(恐龙),5(山羊),7(牛);东门 y=4(鸵鸟),7(猪)。
+        BarnMapRecipe.SealSides(buildings, sheet, Width, Height);   // 整列封死(无门洞缺口)
 
-        // 门洞视觉:每个门洞在 Back 层放一块门垫地板(336),让缺口看起来是"门口"而不是破洞。
+        // 边界环:底行封底,只留中央 1 格出口门洞(x=DoorX)。此前 3 格缺口(x=5,6,7)只有中间格有 warp,
+        // 玩家走到两侧缺口格再往下就踩空 → 收窄成 1 格(原版门宽),两侧铺门框柱收口(视觉+物理双保险)。
+        int[] southDoors = { DoorX };
+        BarnMapRecipe.BuildBoundary(buildings, sheet, Width, Height, southDoors);
+        BarnMapRecipe.PlaceWallPost(buildings, sheet, DoorX - 1, DoorY, westFacing: true);
+        BarnMapRecipe.PlaceWallPost(buildings, sheet, DoorX + 1, DoorY, westFacing: false);
+
+        // 入口→中枢走道:浅色木板引导视线(x=DoorX 一列,从门口 y=8 到中枢 y=4)
+        for (int y = DoorY - 1; y >= HubTile.Y; y--)
+            back.Tiles[DoorX, y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorWalkway);
+        // 中枢台周围一小片走道(3 格宽)
+        for (int x = HubTile.X - 1; x <= HubTile.X + 1; x++)
+            back.Tiles[x, HubTile.Y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorWalkway);
+
+        // 门洞视觉:每个门洞 Back 层保留木地板(门口),避免看起来像破洞。
         foreach (var (_, x, y) in DoorPositions)
-            back.Tiles[x, y] = new StaticTile(back, floorSheet, BlendMode.Alpha, FloorA);
+            back.Tiles[x, y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorWalkway);
 
-        // 中枢操作台(大堂中央):一张桌子 + 一侧椅子,玩家点击打开中枢菜单。
-        // townInterior 桌子 tile 参考索引:桌 179,椅 150(视觉点缀,不挡路)。
-        const int TableTile = 179;
-        const int ChairTile = 150;
-        buildings.Tiles[HubTile.X, HubTile.Y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, TableTile);
-        buildings.Tiles[HubTile.X + 1, HubTile.Y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, ChairTile);
+        // 门口动物挂牌:加 plaque tilesheet(8 个动物图标),每个门挂对应房间的牌子,一眼看出是哪个房间。
+        // 挂 Front 层(前景,有立体感);北墙门(y1)挂门楣(y0);凹进的西/东门挂在门后墙(x=0 / x=Width-1)正上方。
+        var plaqueSheet = BarnMapRecipe.AddExtraTileSheet(map, "plaques", "xiepe.AnimalBarn/Plaques", 8, 1);
+        foreach (var (room, x, y) in DoorPositions)
+        {
+            int plaqueIndex = PlaqueIndex(room);          // 0..7 对应 tilesheet 列
+            int plaqueX = x, plaqueY = y - 1;             // 默认:门洞上方一格
+            if (y == 1) { plaqueY = 0; }                  // 北墙门 → 顶墙框行 y0
+            else if (x == 1) plaqueX = 0;                 // 凹进西门 → 挂在 x=0 后墙正上方
+            else if (x == Width - 2) plaqueX = Width - 1; // 凹进东门 → 挂在 x=Width-1 后墙正上方
+            if (plaqueY < 0) plaqueY = 0;
+            front.Tiles[plaqueX, plaqueY] = new StaticTile(front, plaqueSheet, BlendMode.Alpha, plaqueIndex);
+        }
+
+        // 中枢操作台(大堂中央):不再是干草堆。电脑桌造型由运行时对象放(RoomManager/大堂初始化),
+        // 这里只保留可点击的中枢 tile(走道地板),不占 Buildings 层(否则会挡路且是乱码干草块)。
+        // IsHubTile(x,y) 仍是打开中枢菜单的触发点(BarnPatches.BeforeCheckAction)。
 
         // AutoFeed 属性(AnimalHouse 自动喂食用;大堂无动物,但统一加无妨)
         map.Properties["AutoFeed"] = "T";
 
-        // 出楼 warp:门洞中心 -> 楼外 HumanDoor 处。updateWarps()(室内构造时经 loadObjects 调用)读取本属性,
-        // 然后 ParentBuilding.updateInteriorWarps() 会把 TargetName=="Farm" 的 warp 改写为 HumanDoor 绝对坐标。
-        // toX/toY 用占位(0 0)即可 —— 会被改写。此 warp 同时是建筑入口的落点:Building 点门进入时
-        // Game1.warpFarmer(interior, warps[0].X, warps[0].Y - 1),即玩家出现在门洞上方一格 (6, 7)。
+        // 养殖场标记(原版类型 + 地图属性识别,不用自定义类避免存档序列化崩溃)
+        AnimalBarnLocations.MarkLobby(map);
+
+        // 出楼 warp:门洞中心 -> 楼外 HumanDoor 处。updateWarps() 读取本属性,
+        // 然后 ParentBuilding.updateInteriorWarps() 把 TargetName=="Farm" 的 warp 改写为 HumanDoor 绝对坐标。
+        // toX/toY 用占位(0 0)即可 —— 会被改写。此 warp 同时是建筑入口的落点。
         map.Properties["Warp"] = $"{DoorX} {DoorY} Farm 0 0";
 
         return map;

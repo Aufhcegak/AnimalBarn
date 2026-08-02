@@ -16,7 +16,7 @@ public static class EdgePolish
     /// 客机若直接改本地 modData 副本,会被主机覆盖成陈旧值(仅"看起来成功",实为丢档/丢钱),
     /// 且客机的内存缓存(_states)与主机永久失步。因此客机一律只读。
     /// 用法:HubMenu 等菜单在购买/升级/存取动作前调用,客机应拒绝并提示。
-    /// 注:DayUpdate 结算已由 AnimalBarnRoom.DayUpdate 的 IsMasterGame 分支隔离,不受本函数影响。</summary>
+    /// 注:DayUpdate 结算已由 BarnPatches 的 IsMasterGame 分支隔离,不受本函数影响。</summary>
     public static bool CanModifyState() => Game1.IsMasterGame;
 
     // ── 状态安全获取 ───────────────────────────────────────────────────────────

@@ -20,10 +20,11 @@ public class ModEntry : Mod
         helper.Events.Content.AssetRequested += LobbyMapBuilder.OnAssetRequested;
         helper.Events.Content.AssetRequested += RoomMapBuilder.OnAssetRequested;
 
-        // Harmony 补丁:产物拦截 + 拆除保护
+        // Harmony 补丁:产物拦截 + 拆除保护 + 每日结算 + 中枢操作台
         var harmony = new Harmony(this.ModManifest.UniqueID);
         AutoGrabberInterceptor.Register(harmony);
         DemolitionGuard.Register(harmony);
+        BarnPatches.Register(harmony);
 
         // 静态注入点:各模块共享同一个 BarnManager
         SettlementService.Current = this.Barn;
@@ -46,9 +47,11 @@ public class ModEntry : Mod
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
         if (!Context.IsWorldReady) return;
-        if (Game1.currentLocation is not AnimalBarnRoom lobby) return;
+        if (Game1.currentLocation is not GameLocation cur) return;
+        if (!AnimalBarnLocations.IsLobby(cur)) return;   // 只在大堂检测门洞
+        HubConsole.EnsurePlaced(cur);                    // 中枢电脑台(幂等,缺失才补放)
         var who = Game1.player;
         if (who == null || !who.IsLocalPlayer) return;
-        LobbyDoors.TryEnterDoor(lobby, who, this.Barn);
+        LobbyDoors.TryEnterDoor(cur, who, this.Barn);
     }
 }

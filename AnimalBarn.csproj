@@ -22,9 +22,10 @@
   <ItemGroup>
     <None Update="manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="i18n\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="assets\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="DeployToMods" AfterTargets="Build">
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildProjectDirectory)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildProjectDirectory)" Condition="'$(DeployToMods)' != 'false'" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\manifest.json" DestinationFolder="$(MSBuildProjectDirectory)" SkipUnchangedFiles="true" />
   </Target>
 </Project>

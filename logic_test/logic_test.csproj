@@ -11,5 +11,6 @@
     <Compile Include="../FarmAnimalCatalog.cs" />
     <Compile Include="../UpgradeSystem.cs" />
     <Compile Include="../BarnSaveData.cs" />
+    <Compile Include="../RoomDefinitions.cs" />
   </ItemGroup>
 </Project>

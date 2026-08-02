@@ -8,26 +8,40 @@ using xTile.Tiles;
 
 namespace AnimalBarn;
 
-/// <summary>代码生成 8 个动物房间地图。复用 LobbyMapBuilder 的 tile 配方(地板/墙/边界环防穿墙),
-/// 并新增干草槽(Trough 属性,AnimalHouse.feedAllAnimals 扫描 Back 层该属性自动喂食)。
-/// 地图尺寸 15x11,统一由 Task 3.2 门系统按 RoomDefinitions.All 逐个设为房间 IndoorMap。</summary>
+/// <summary>代码生成 8 个动物房间地图。墙体照搬原版畜棚(coopTiles)配方,地板/干草每房差异化,
+/// 并保留关键功能:干草槽(Trough 属性,feedAllAnimals 扫 Back 层该属性自动喂食)、
+/// AutoFeed、ProduceArea、出口 Warp。地图尺寸 15x11,由 Task 3.2 门系统按 RoomDefinitions.All 设为房间 IndoorMap。</summary>
 public static class RoomMapBuilder
 {
     public const int Width = 15;
     public const int Height = 11;
 
-    // 与 LobbyMapBuilder 相同的已验证 tile 索引(MonsterArena/Task 1.4):
-    // 地板 = walls_and_floors 336/352(隔行),底座 = 32,墙 = townInterior 1(顶)/64(侧)/160(角)
-    private const int FloorA = 336;
-    private const int FloorB = 352;
-    private const int Baseboard = 32;
-    private const int WallTop = 1;
-    private const int WallSide = 64;
-    private const int WallCorner = 160;
-
-    /// <summary>门洞中心 tile X(与 LobbyMapBuilder 相同的定义;出口落点即门洞上方一格)。</summary>
+    /// <summary>门洞中心 tile X(出口落点即门洞上方一格)。</summary>
     public const int DoorX = Width / 2;
     public const int DoorY = Height - 1;
+
+    // coopTiles 平铺地板纹理(每房差异化;都是干净平板,铺在 Back 层,动物可站)
+    private const int FloorWood = 12;      // 经典平木板(鸡/兔)
+    private const int FloorLight = 46;     // 浅色平板(鸭/羊)
+    private const int FloorMid = 56;       // 中色平板(鸵鸟/猪)
+    private const int FloorWarm = 54;      // 暖色平板(恐龙/牛)
+
+    // coopTiles 平铺干草堆(Back 层装饰,无框、平贴地面,营造畜棚氛围;不挡路,动物可踩)
+    private static readonly int[] HayScatter = { 13, 14, 15, 17, 18, 21, 22 };
+
+    // 每房主题:地板 + 干草种子(让同类房间每次生成一致)
+    private static (int floor, int seed) Theme(RoomType room) => room switch
+    {
+        RoomType.Chicken => (FloorWood, 101),
+        RoomType.Duck => (FloorLight, 102),
+        RoomType.Rabbit => (FloorWood, 103),
+        RoomType.Dinosaur => (FloorWarm, 104),
+        RoomType.Ostrich => (FloorMid, 105),
+        RoomType.Pig => (FloorMid, 106),
+        RoomType.Goat => (FloorLight, 107),
+        RoomType.Cow => (FloorWarm, 108),
+        _ => (FloorWood, 100),
+    };
 
     public static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
     {
@@ -35,77 +49,69 @@ public static class RoomMapBuilder
         {
             if (e.Name.IsEquivalentTo("Maps/" + def.MapName))
             {
-                e.LoadFrom(() => BuildRoomMap(), AssetLoadPriority.Medium);
+                e.LoadFrom(() => BuildRoomMap(def.Room), AssetLoadPriority.Medium);
                 return;
             }
         }
     }
 
-    public static Map BuildRoomMap()
+    public static Map BuildRoomMap(RoomType roomType = RoomType.Chicken)
     {
-        var map = new Map();
-        // 五层:Back/Buildings/Front/Paths/AlwaysFront(游戏要求,缺一崩)
-        // Layer tileSize 必须 64x64(static 共享,运行时游戏按 64 计算碰撞边界)。
-        var back = new Layer("Back", map, new Size(Width, Height), new Size(64, 64));
-        var buildings = new Layer("Buildings", map, new Size(Width, Height), new Size(64, 64));
-        var front = new Layer("Front", map, new Size(Width, Height), new Size(64, 64));
-        var paths = new Layer("Paths", map, new Size(Width, Height), new Size(64, 64));
-        var alwaysFront = new Layer("AlwaysFront", map, new Size(Width, Height), new Size(64, 64));
-        map.AddLayer(back);
-        map.AddLayer(buildings);
-        map.AddLayer(front);
-        map.AddLayer(paths);
-        map.AddLayer(alwaysFront);
+        var (map, back, buildings, front, paths, alwaysFront, sheet) =
+            BarnMapRecipe.CreateMapShell(Width, Height);
+        var (floorTile, seed) = Theme(roomType);
 
-        // 贴图集(6 参构造:id, map, imageSource, sheetSize, tileSize)
-        var floorSheet = new TileSheet("walls_and_floors", map, "Maps/walls_and_floors", new Size(512, 384), new Size(16, 16));
-        var interiorSheet = new TileSheet("townInterior", map, "Maps/townInterior", new Size(512, 512), new Size(16, 16));
-        map.AddTileSheet(floorSheet);
-        map.AddTileSheet(interiorSheet);
+        // 地板:全铺该房主题地板
+        BarnMapRecipe.FillFloor(back, sheet, Width, Height, floorTile);
 
-        // 地板:全铺 336,隔行 352(视觉交错)
-        for (int x = 0; x < Width; x++)
-            for (int y = 0; y < Height; y++)
-                back.Tiles[x, y] = new StaticTile(back, floorSheet, BlendMode.Alpha, (y % 2 == 0) ? FloorA : FloorB);
+        // 顶部 3 行墙体(顶墙框 + 墙带 + 墙裙) + 窗户点缀;房间无北墙门(门在南)
+        int[] windows = { 3, 7, 11 };
+        BarnMapRecipe.BuildWalls(back, buildings, sheet, Width, Height, northDoorXs: null, windows);
+        BarnMapRecipe.AddWallDecor(buildings, sheet, Width, cobweb: true, hook: true);
 
-        // 顶墙:WallTop 一行 + 下面 Baseboard 一行(封底)
-        for (int x = 0; x < Width; x++)
-        {
-            buildings.Tiles[x, 0] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallTop);
-            buildings.Tiles[x, 1] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, Baseboard);
-        }
-        // 两侧墙
-        for (int y = 0; y < Height; y++)
-        {
-            buildings.Tiles[0, y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallSide);
-            buildings.Tiles[Width - 1, y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallSide);
-        }
-        // 四角
-        buildings.Tiles[0, 0] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallCorner);
-        buildings.Tiles[Width - 1, 0] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallCorner);
-        // 边界环:底行全 Baseboard(防穿墙),中央留 3 格门洞 (x=6,7,8)
-        for (int x = 0; x < Width; x++)
-            buildings.Tiles[x, Height - 1] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, Baseboard);
-        for (int x = Width / 2 - 1; x <= Width / 2 + 1; x++)
-            buildings.Tiles[x, Height - 1] = null;
+        // 封死左右两列(房间无侧门;防穿墙:isTilePassable 对越界/null tile 当 passable)
+        BarnMapRecipe.SealSides(buildings, sheet, Width, Height);
 
-        // 干草槽:Back 层 y=2 一行加 Trough 属性(AnimalHouse.feedAllAnimals 扫描 "Trough"/"Back" 属性喂食)。
-        // tile 本身是地板(可通行)——动物踩上去进食;绝不能放在墙/阻挡 tile 上。
+        // 边界环:底行封底,只留中央 1 格出口门洞(x=DoorX)。此前 3 格缺口(x=6,7,8)只有中间格有 warp,
+        // 玩家走到两侧缺口格再往下就踩空 → 收窄成 1 格(原版门宽),两侧铺门框柱收口(视觉+物理双重保险)。
+        int[] southDoors = { DoorX };
+        BarnMapRecipe.BuildBoundary(buildings, sheet, Width, Height, southDoors);
+        BarnMapRecipe.PlaceWallPost(buildings, sheet, DoorX - 1, DoorY, westFacing: true);
+        BarnMapRecipe.PlaceWallPost(buildings, sheet, DoorX + 1, DoorY, westFacing: false);
+
+        // 干草槽:Back 层 y=3(活动区第一行,墙裙 y2 之下,无遮挡)一行加 Trough 属性
+        // (AnimalHouse.feedAllAnimals 扫描 "Trough"/"Back" 属性喂食),并铺干草块(18)做视觉标识。
+        // tile 可通行,动物踩上去进食;绝不能放在墙/阻挡 tile 上。
         for (int x = 3; x <= Width - 4; x++)
         {
-            var tile = back.Tiles[x, 2];
-            tile.Properties["Trough"] = "T";
+            back.Tiles[x, 3] = new StaticTile(back, sheet, BlendMode.Alpha, 18);
+            back.Tiles[x, 3].Properties["Trough"] = "T";
+        }
+
+        // 干草点缀:在活动区(y>=4)撒几撮干草,营造畜棚氛围(每房种子固定 → 同类房间外观一致)。
+        // 避开干草槽行 y3 与出口门洞列(DoorX 那列,玩家进出路线)。
+        var rng = new System.Random(seed);
+        int scatterCount = 5;
+        for (int i = 0; i < scatterCount; i++)
+        {
+            int x = rng.Next(2, Width - 2);
+            int y = rng.Next(4, Height - 2);
+            if (x == DoorX && y >= Height - 3) continue;  // 门口通道(单格门列)留空
+            int hay = HayScatter[rng.Next(HayScatter.Length)];
+            back.Tiles[x, y] = new StaticTile(back, sheet, BlendMode.Alpha, hay);
         }
 
         // AutoFeed 属性(AnimalHouse 自动喂食:有 Trough 槽时直接消耗槽内干草)
         map.Properties["AutoFeed"] = "T";
 
+        // 养殖场房间标记(原版类型 + 地图属性识别,不用自定义类避免存档序列化崩溃)
+        AnimalBarnLocations.MarkRoom(map, roomType);
+
         // ProduceArea 属性:动物随机站位矩形(中间 11x6 区域)
         map.Properties["ProduceArea"] = "2,3,11,6";
 
         // 出楼 warp:门洞中心 -> Farm。updateWarps() 读取本属性,ParentBuilding.updateInteriorWarps()
-        // 把 TargetName=="Farm" 的 warp 改写为建筑 HumanDoor 绝对坐标。无此属性进入房间即崩溃
-        // (Building 使用 warps[0]),所以必需。
+        // 把 TargetName=="Farm" 的 warp 改写为建筑 HumanDoor 绝对坐标。无此属性进入房间即崩溃。
         map.Properties["Warp"] = $"{DoorX} {DoorY} Farm 0 0";
 
         return map;

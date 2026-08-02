@@ -26,6 +26,13 @@ public static class IntegrationTest
 
         try
         {
+            // 0.5 原版 Barn/Coop 的门坐标参照(诊断,写进结果文件)
+            foreach (var key in new[] { "Barn", "Big Barn", "Deluxe Barn", "Coop" })
+                if (Game1.buildingData.TryGetValue(key, out var vd))
+                    results.Add($"INFO vanilla {key}: Size={vd.Size.X}x{vd.Size.Y} HumanDoor=({vd.HumanDoor.X},{vd.HumanDoor.Y}) SrcRect={vd.SourceRect} SortTileOffset={vd.SortTileOffset} DrawOffset={vd.DrawOffset}");
+            if (Game1.buildingData.TryGetValue("xiepe.AnimalBarn", out var mine))
+                results.Add($"INFO mine: Size={mine.Size.X}x{mine.Size.Y} HumanDoor=({mine.HumanDoor.X},{mine.HumanDoor.Y}) SrcRect={mine.SourceRect}");
+
             // 1. 建筑数据存在
             Check("buildingData has xiepe.AnimalBarn",
                 Game1.buildingData.TryGetValue("xiepe.AnimalBarn", out var data) && data.Builder == "Robin");
@@ -34,8 +41,8 @@ public static class IntegrationTest
             var b = Building.CreateInstanceFromId("xiepe.AnimalBarn", new Vector2(0, 0));
             Check("building instantiable", b != null && b.buildingType.Value == "xiepe.AnimalBarn");
 
-            // 3. 大堂地图可加载(地图资产注入在 Task 1.4,此时应已注册)
-            var lobby = new AnimalBarnRoom("Maps\\xiepe.AnimalBarn.Lobby", "xiepe.AnimalBarn.Lobby");
+            // 3. 大堂地图可加载(地图资产注入在 Task 1.4,此时应已注册;原版 AnimalHouse 类型,存档序列化安全)
+            var lobby = new StardewValley.AnimalHouse("Maps\\xiepe.AnimalBarn.Lobby", "xiepe.AnimalBarn.Lobby");
             Check("lobby map loads", lobby.map != null && lobby.map.Layers.Count >= 5);
 
             // 4. 大堂可进(Back 层有地板,门洞处无阻挡)
@@ -43,6 +50,44 @@ public static class IntegrationTest
 
             // 5. 大堂出口 warp 存在(指向 Farm)
             Check("lobby has farm warp", lobby.warps.Any(w => w.TargetName == "Farm"));
+
+            // 5b. 大堂边界封死防穿墙:左右两列【整列】封死(侧门已改为凹进门龛,门后 x=0/12 是墙),
+            // 底行除出口(5,6,7)外全部阻挡,顶行全阻挡。
+            var lb = lobby.map.GetLayer("Buildings");
+            bool sidesSealed = true;
+            for (int y = 0; y < LobbyMapBuilder.Height; y++)
+            {
+                if (lb.Tiles[0, y] == null) sidesSealed = false;                        // 西列整列封死
+                if (lb.Tiles[LobbyMapBuilder.Width - 1, y] == null) sidesSealed = false; // 东列整列封死
+            }
+            Check("lobby sides sealed (full columns)", sidesSealed);
+            bool bottomSealed = true;
+            for (int x = 0; x < LobbyMapBuilder.Width; x++)
+                if (x != LobbyMapBuilder.DoorX && lb.Tiles[x, LobbyMapBuilder.Height - 1] == null) bottomSealed = false;
+            Check("lobby bottom sealed", bottomSealed);
+            // 顶行(y0)全阻挡
+            bool topSealed = true;
+            for (int x = 0; x < LobbyMapBuilder.Width; x++)
+                if (lb.Tiles[x, 0] == null) topSealed = false;
+            Check("lobby top sealed", topSealed);
+
+            // 5d. 每个房间门必须(a)门洞本身可通行(无 Buildings 阻挡→玩家能站上去触发 warp);
+            // (b)门后/门外一格必须是墙(绝不能越界/裸奔出图)。这是防"门进不去"和"踩空"的硬检查。
+            bool allDoorsOk = true;
+            foreach (var (room, dx, dy) in LobbyMapBuilder.DoorPositions)
+            {
+                bool doorOpen = lb.Tiles[dx, dy] == null;
+                // 门后一格:西门(x==1)→(0,dy);东门(x==Width-2)→(Width-1,dy);北门(y==1)→(dx,0)
+                int bx = dx, by = dy;
+                if (dx == 1) bx = 0; else if (dx == LobbyMapBuilder.Width - 2) bx = LobbyMapBuilder.Width - 1; else by = 0;
+                bool behindIsWall = lb.Tiles[bx, by] != null;
+                if (!doorOpen || !behindIsWall) allDoorsOk = false;
+                results.Add($"INFO door {room} @({dx},{dy}) open={doorOpen} behind({bx},{by})wall={behindIsWall}");
+            }
+            Check("all room doors open + walled behind", allDoorsOk);
+
+            // 5c. 中枢菜单框源矩形是标准 60x60(可被 drawTextureBox 按 /3 九宫格切,不会碎)
+            Check("menu box src 60x60", GetMenuBoxSrc().Width == 60 && GetMenuBoxSrc().Height == 60);
 
             // 6. 中枢菜单可实例化 + 切页签不崩
             var snap = new HubSnapshot(
@@ -64,12 +109,12 @@ public static class IntegrationTest
             // 7. 8 个房间地图全部可加载且要素齐全(干草槽/自动喂食/生产区/出口)
             foreach (var def in RoomDefinitions.All)
             {
-                var room = new AnimalBarnRoom("Maps\\" + def.MapName, def.MapName);
+                var room = new StardewValley.AnimalHouse("Maps\\" + def.MapName, def.MapName);
                 var map = room.map;
                 Check($"room {def.Room} loads", map != null && map.Layers.Count >= 5);
                 Check($"room {def.Room} AutoFeed", map != null && map.Properties.ContainsKey("AutoFeed"));
                 Check($"room {def.Room} ProduceArea", map != null && map.Properties.ContainsKey("ProduceArea"));
-                Check($"room {def.Room} Trough", map?.GetLayer("Back").Tiles[5, 2]?.Properties.ContainsKey("Trough") == true);
+                Check($"room {def.Room} Trough", map?.GetLayer("Back").Tiles[5, 3]?.Properties.ContainsKey("Trough") == true);
                 Check($"room {def.Room} Warp", room.warps.Any(w => w.TargetName == "Farm"));
             }
 
@@ -124,5 +169,13 @@ public static class IntegrationTest
 
         File.WriteAllLines(Path.Combine(ModEntry.Instance.Helper.DirectoryPath, "autotest_result.txt"), results);
         ModEntry.Instance.Monitor.Log("AnimalBarn integration test done: " + results.Count(r => r.StartsWith("PASS")) + " passed", LogLevel.Info);
+    }
+
+    /// <summary>反射读取 HubMenu 的菜单框源矩形(验证是标准 60x60,drawTextureBox 能正确九宫格切)。</summary>
+    private static Microsoft.Xna.Framework.Rectangle GetMenuBoxSrc()
+    {
+        var f = typeof(HubMenu).GetField("MenuBoxSrc",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+        return f != null ? (Microsoft.Xna.Framework.Rectangle)f.GetValue(null)! : Microsoft.Xna.Framework.Rectangle.Empty;
     }
 }

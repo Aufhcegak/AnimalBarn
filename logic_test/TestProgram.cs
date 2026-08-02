@@ -102,6 +102,15 @@ Check("ostrich cap clamp", UpgradeSystem.CapacityAt(RoomType.Ostrich, 9) == 60);
 Check("goat cap 90", UpgradeSystem.CapacityAt(RoomType.Goat, 5) == 90);
 Check("friendship lvl1", UpgradeSystem.FriendshipGainAt(1) == 6);
 Check("friendship lvl3", UpgradeSystem.FriendshipGainAt(3) == 9);
+
+// --- RoomDefinitions:羊与山羊共用羊场(9 动物 8 房),买羊/判解锁/容量都要落到 Goat 房 ---
+Check("RoomFor sheep -> goat house", RoomDefinitions.RoomFor(RoomType.Sheep) == RoomType.Goat);
+Check("RoomFor goat -> goat house", RoomDefinitions.RoomFor(RoomType.Goat) == RoomType.Goat);
+Check("RoomFor chicken 1:1", RoomDefinitions.RoomFor(RoomType.Chicken) == RoomType.Chicken);
+Check("RoomFor cow 1:1", RoomDefinitions.RoomFor(RoomType.Cow) == RoomType.Cow);
+Check("Get(sheep house) via RoomFor no-throw", RoomDefinitions.Get(RoomDefinitions.RoomFor(RoomType.Sheep)).DisplayName == "羊场");
+Check("RoomDefinitions has 8 rooms", RoomDefinitions.All.Length == 8);
+Check("catalog has 9 animals", FarmAnimalCatalog.All.Length == 9);
 Check("friendship lvl5", UpgradeSystem.FriendshipGainAt(5) == 12);
 Check("friendship clamp low", UpgradeSystem.FriendshipGainAt(0) == 6);
 Check("friendship clamp high", UpgradeSystem.FriendshipGainAt(99) == 12);

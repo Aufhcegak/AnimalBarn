@@ -10,11 +10,11 @@ namespace AnimalBarn;
 public static class LobbyDoors
 {
     /// <summary>本 tick 已触发 warp 的大堂(防 1 tick 内重复触发)。</summary>
-    private static AnimalBarnRoom? _warpedLobbyThisTick;
+    private static GameLocation? _warpedLobbyThisTick;
 
     /// <summary>玩家站在门洞上时调用(ModEntry.UpdateTicked 每 tick 检查)。
     /// 返回 true 表示已触发 warp。barn 可传 null → 退回 SettlementService.Current。</summary>
-    public static bool TryEnterDoor(AnimalBarnRoom lobby, Farmer who, BarnManager? barn = null)
+    public static bool TryEnterDoor(GameLocation lobby, Farmer who, BarnManager? barn = null)
     {
         if (lobby == null || who == null || !who.IsLocalPlayer) return false;
         if (Game1.isWarping || Game1.locationRequest != null || Game1.eventUp) return false;
@@ -42,6 +42,9 @@ public static class LobbyDoors
             var target = RoomManager.GetOrCreate(lobby, room);
             if (target == null) return false;
 
+            // 进门可见动物:把台账前 30 只补成实体(此前只写台账不生成实体 → 房间里看不见动物)。
+            RoomAnimalRenderer.EnsureVisibleOnEnter(target);
+
             _warpedLobbyThisTick = lobby;
             Game1.warpFarmer(target.NameOrUniqueName, RoomMapBuilder.DoorX, RoomMapBuilder.DoorY - 1, FacingIntoRoom(room));
             return true;
@@ -49,21 +52,22 @@ public static class LobbyDoors
         return false;
     }
 
-    /// <summary>门洞朝向:北/南门朝上(0),西门朝右(1),东门朝左(3)。</summary>
+    /// <summary>门洞朝向:北/南门朝上(0),西门朝右(1),东门朝左(3)。
+    /// 侧门是凹进门龛(门洞 x=1 西 / x=Width-2 东),按"门靠哪边墙"判朝向。</summary>
     private static int FacingIntoRoom(RoomType room)
     {
         foreach (var (r, x, y) in LobbyMapBuilder.DoorPositions)
         {
             if (r != room) continue;
-            if (x == 0) return 1;        // 西墙 → 朝右
-            if (x == LobbyMapBuilder.Width - 1) return 3;  // 东墙 → 朝左
-            return 0;                    // 北/南墙 → 朝上
+            if (x == 1) return 1;                    // 西墙凹进门 → 朝右
+            if (x == LobbyMapBuilder.Width - 2) return 3;  // 东墙凹进门 → 朝左
+            return 0;                                // 北墙门 → 朝上
         }
         return 0;
     }
 
     /// <summary>玩家是否站在某门洞墙外侧(紧邻墙的室内 tile) —— 用于未解锁时贴墙提示。</summary>
-    private static bool IsAdjacentToWall(AnimalBarnRoom lobby, Point tile)
+    private static bool IsAdjacentToWall(GameLocation lobby, Point tile)
     {
         foreach (var (_, x, y) in LobbyMapBuilder.DoorPositions)
         {
@@ -93,10 +97,10 @@ public static class LobbyDoors
 /// </remarks>
 public static class RoomManager
 {
-    private static readonly Dictionary<(Guid BuildingId, RoomType Room), AnimalBarnRoom> Rooms = new();
+    private static readonly Dictionary<(Guid BuildingId, RoomType Room), GameLocation> Rooms = new();
 
     /// <summary>获取(或惰性创建)某建筑某房间的室内地点。已缓存直接返回。</summary>
-    public static AnimalBarnRoom? GetOrCreate(AnimalBarnRoom lobby, RoomType room)
+    public static GameLocation? GetOrCreate(GameLocation lobby, RoomType room)
     {
         var building = lobby.ParentBuilding;
         if (building == null) return null;
@@ -105,7 +109,7 @@ public static class RoomManager
 
     /// <summary>获取(或惰性创建)某建筑某房间的室内地点。lobby 为对应大堂(用于 warp 回程目标)。
     /// 公开给 IntegrationTest/协调者直接调用(传真实 Building 或最小桩)。</summary>
-    public static AnimalBarnRoom? GetOrCreate(Building building, RoomType room, AnimalBarnRoom? lobby)
+    public static GameLocation? GetOrCreate(Building building, RoomType room, GameLocation? lobby)
     {
         var key = (building.id.Value, room);
         if (Rooms.TryGetValue(key, out var existing))
@@ -116,10 +120,12 @@ public static class RoomManager
         }
 
         var def = RoomDefinitions.Get(room);
-        AnimalBarnRoom loc;
+        GameLocation loc;
         try
         {
-            loc = new AnimalBarnRoom("Maps\\" + def.MapName, def.MapName + "_" + Guid.NewGuid().ToString("N")[..6]);
+            // 原版 AnimalHouse:有动物集合/自动喂食/DayUpdate 结算,且存档序列化安全(原版已知类型)。
+            // 房间类型由地图属性识别(AnimalBarnLocations.TryGetRoomType),不用自定义类。
+            loc = new StardewValley.AnimalHouse("Maps\\" + def.MapName, def.MapName + "_" + Guid.NewGuid().ToString("N")[..6]);
         }
         catch (Exception ex)
         {
@@ -127,8 +133,12 @@ public static class RoomManager
             return null;
         }
 
-        loc.RoomType = room;
         loc.ParentBuilding = building;   // 公共字段,可直接赋值(已验证 1.6.15)
+
+        // 圈一道矮围栏,把"动物圈"(上半,干草槽一带)和"玩家通道"(下半,门口)隔开,有养殖场的样子。
+        // 中央靠门留 3 格缺口供进出圈。围栏是运行时 Fence 对象(StardewValley.Object),原版地道圈法,
+        // 不进存档(房间不序列化),读档后随房间重建。 y=5 在槽行(y3)之下、门口(h-1)之上。
+        BuildPenFence(loc);
 
         // 房间出口 warp(地图属性里指向 Farm)→ 改写指向大堂门洞,玩家从房间返回大堂。
         // 注意:房间不是建筑的 instanced indoors,updateInteriorWarps 不会触碰它;
@@ -137,8 +147,10 @@ public static class RoomManager
         {
             var w = loc.warps[0];
             w.TargetName = lobby.NameOrUniqueName;
-            w.TargetX = LobbyMapBuilder.DoorX;                       // 大堂出口门洞中心 (6,8)
-            w.TargetY = LobbyMapBuilder.DoorY;                       // 落点即门洞 tile(门洞是缺口,可站)
+            // 落点在大堂出口门洞"上方一格"(6,7):实心地板、安全,不会再往外一步走出大堂。
+            // (此前落在门洞 tile (6,8) 本身——底边缺口,玩家容易直接走出大堂进虚空 = 踩空。)
+            w.TargetX = LobbyMapBuilder.DoorX;
+            w.TargetY = LobbyMapBuilder.DoorY - 1;
         }
         else
         {
@@ -150,8 +162,27 @@ public static class RoomManager
         return loc;
     }
 
+    /// <summary>在房间 y=5 拉一道木围栏,中央靠门留 3 格缺口(x=DoorX-1..DoorX+1)。
+    /// 围栏放 loc.objects(Fence 是 Object),原版畜棚圈法;阻挡通行,动物/玩家都绕缺口走。</summary>
+    private static void BuildPenFence(GameLocation loc)
+    {
+        const int fenceY = 5;
+        int w = RoomMapBuilder.Width;
+        for (int x = 1; x < w - 1; x++)
+        {
+            if (x >= RoomMapBuilder.DoorX - 1 && x <= RoomMapBuilder.DoorX + 1) continue;  // 缺口(通道)
+            var tile = new Vector2(x, fenceY);
+            loc.objects[tile] = new Fence(tile, Fence.woodFenceId, isGate: false);
+        }
+    }
+
     /// <summary>读档后清理缓存(房间由首次进门时重建)。</summary>
     public static void ClearCache() => Rooms.Clear();
+
+    /// <summary>只查缓存(不创建):房间已创建则返回,否则 null。购买后同步可见实体用 ——
+    /// 房间还没进过就不预建,等首次进门 EnsureVisibleOnEnter 再生成,避免无谓实例化。</summary>
+    public static GameLocation? GetExisting(Building building, RoomType room)
+        => Rooms.TryGetValue((building.id.Value, room), out var loc) ? loc : null;
 
     /// <summary>测试/诊断用。</summary>
     public static int Count => Rooms.Count;

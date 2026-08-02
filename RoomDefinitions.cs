@@ -20,4 +20,9 @@ public static class RoomDefinitions
     };
 
     public static RoomDef Get(RoomType room) => All.First(r => r.Room == room);
+
+    /// <summary>动物类型 -> 实际容纳它的房间。绵羊(Sheep)与山羊(Goat)共用一间「羊场」(9 种动物 8 间房),
+    /// 所以买绵羊、判解锁/容量、生成实体动物都要落到 RoomType.Goat 这间房;其余动物 1:1。
+    /// 直接 Get(RoomType.Sheep) 会抛异常(All 里没有 Sheep 房),所有按"动物买的房间"走的代码必须改用本方法。</summary>
+    public static RoomType RoomFor(RoomType animalType) => animalType == RoomType.Sheep ? RoomType.Goat : animalType;
 }

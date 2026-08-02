@@ -30,17 +30,16 @@ public static class AutoGrabberInterceptor
         if (!Game1.IsMasterGame) return true;   // 多人为安全:dayUpdate 只在主机结算,补丁也只应跑在主机
         if (Barn == null) return true;          // 协调者未接线:放行原版
         if (o == null || l == null) return true;
-        if (l is not AnimalBarnRoom room) return true;
-        if (room.RoomType == null) return true;          // 大堂(null)放行原版
-        if (room.ParentBuilding == null) return true;
+        if (!AnimalBarnLocations.TryGetRoomType(l, out var roomType)) return true;  // 非养殖场房间放行原版
+        if (l.ParentBuilding == null) return true;
         if (!IsProduceItem(o)) return true;     // 非动物产品(干草/其他掉落物)放行
 
-        var state = Barn.GetOrCreate(room.ParentBuilding);
-        var roomState = state.GetRoom(room.RoomType.Value);
+        var state = Barn.GetOrCreate(l.ParentBuilding);
+        var roomState = state.GetRoom(roomType);
         roomState.ProduceStacks.TryGetValue(o.QualifiedItemId, out int n);
         roomState.ProduceStacks[o.QualifiedItemId] = n + o.Stack;
         roomState.ProduceCount += o.Stack;
-        if (playSound) room.playSound("coin");
+        if (playSound) l.playSound("coin");
         __result = true;
         return false;  // 跳过原版掉地
     }
