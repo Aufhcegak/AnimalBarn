@@ -78,5 +78,33 @@ Check("short hay: first fed", a1.Fullness == 255 && a1.Friendship == 6);
 Check("short hay: second hungry", a2.Fullness == 0 && a2.Friendship == 80 && a2.Happiness == 100);
 Check("short hay: only fed one produces", l6.ProduceCount == 1 && a1.ProduceCount == 1 && a2.ProduceCount == 0);
 
+// --- UpgradeSystem 测试 ---
+Check("unlock chicken lvl1", UpgradeSystem.IsUnlocked(RoomType.Chicken, 1));
+Check("no pig lvl1", !UpgradeSystem.IsUnlocked(RoomType.Pig, 1));
+Check("pig lvl2", UpgradeSystem.IsUnlocked(RoomType.Pig, 2));
+Check("no cow lvl2", !UpgradeSystem.IsUnlocked(RoomType.Cow, 2));
+Check("cow lvl3", UpgradeSystem.IsUnlocked(RoomType.Cow, 3));
+Check("duck lvl4", UpgradeSystem.IsUnlocked(RoomType.Duck, 4));
+Check("rabbit lvl4", UpgradeSystem.IsUnlocked(RoomType.Rabbit, 4));
+Check("no duck lvl3", !UpgradeSystem.IsUnlocked(RoomType.Duck, 3));
+Check("dino lvl5", UpgradeSystem.IsUnlocked(RoomType.Dinosaur, 5));
+Check("ostrich lvl5", UpgradeSystem.IsUnlocked(RoomType.Ostrich, 5));
+Check("sheep lvl5", UpgradeSystem.IsUnlocked(RoomType.Sheep, 5));
+Check("goat lvl5", UpgradeSystem.IsUnlocked(RoomType.Goat, 5));
+Check("no dino lvl4", !UpgradeSystem.IsUnlocked(RoomType.Dinosaur, 4));
+Check("chicken cap 600", UpgradeSystem.CapacityAt(RoomType.Chicken, 5) == 600);
+Check("chicken cap 100", UpgradeSystem.CapacityAt(RoomType.Chicken, 0) == 100);
+Check("pig cap 90", UpgradeSystem.CapacityAt(RoomType.Pig, 5) == 90);
+Check("rabbit cap 300", UpgradeSystem.CapacityAt(RoomType.Rabbit, 5) == 300);
+Check("dino cap 60", UpgradeSystem.CapacityAt(RoomType.Dinosaur, 5) == 60);
+Check("ostrich cap 60", UpgradeSystem.CapacityAt(RoomType.Ostrich, 5) == 60);
+Check("ostrich cap clamp", UpgradeSystem.CapacityAt(RoomType.Ostrich, 9) == 60);
+Check("goat cap 90", UpgradeSystem.CapacityAt(RoomType.Goat, 5) == 90);
+Check("friendship lvl1", UpgradeSystem.FriendshipGainAt(1) == 6);
+Check("friendship lvl3", UpgradeSystem.FriendshipGainAt(3) == 9);
+Check("friendship lvl5", UpgradeSystem.FriendshipGainAt(5) == 12);
+Check("friendship clamp low", UpgradeSystem.FriendshipGainAt(0) == 6);
+Check("friendship clamp high", UpgradeSystem.FriendshipGainAt(99) == 12);
+
 Console.WriteLine(failures == 0 ? "ALL PASS" : $"{failures} FAILURES");
 return failures == 0 ? 0 : 1;

@@ -9,5 +9,6 @@
     <Compile Include="../AnimalLedger.cs" />
     <Compile Include="../LedgerAnimal.cs" />
     <Compile Include="../FarmAnimalCatalog.cs" />
+    <Compile Include="../UpgradeSystem.cs" />
   </ItemGroup>
 </Project>
