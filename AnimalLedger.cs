@@ -22,6 +22,26 @@ public class AnimalLedger
     public bool IsFull => Animals.Count >= Capacity;
     public int Count => Animals.Count;
 
+    /// <summary>从房间存档状态构建台账(容量由调用方按房间等级设置)。</summary>
+    public static AnimalLedger FromRoom(BarnSaveData.RoomSaveData roomState)
+    {
+        var ledger = new AnimalLedger();
+        ledger.Animals.AddRange(roomState.Animals);
+        foreach (var (k, v) in roomState.ProduceStacks) ledger.ProduceStacks[k] = v;
+        ledger.ProduceCount = roomState.ProduceCount;
+        return ledger;
+    }
+
+    /// <summary>台账写回房间存档状态(结算后调用)。</summary>
+    public void SaveTo(BarnSaveData.RoomSaveData roomState)
+    {
+        roomState.Animals.Clear();
+        roomState.Animals.AddRange(Animals);
+        roomState.ProduceStacks.Clear();
+        foreach (var (k, v) in ProduceStacks) roomState.ProduceStacks[k] = v;
+        roomState.ProduceCount = ProduceCount;
+    }
+
     public bool TryAdd(LedgerAnimal a)
     {
         if (IsFull) return false;

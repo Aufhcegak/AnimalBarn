@@ -134,5 +134,20 @@ Check("serialize animal", back.GetRoom(RoomType.Chicken).Animals.Count == 1);
 Check("serialize animal fields", back.GetRoom(RoomType.Chicken).Animals[0].Friendship == 300 && back.GetRoom(RoomType.Chicken).Animals[0].TypeKey == "White Chicken");
 Check("serialize animal room enum", back.GetRoom(RoomType.Chicken).Animals[0].Room == RoomType.Chicken);
 
+// --- AnimalLedger.FromRoom/SaveTo 往返 ---
+var rs = new BarnSaveData.RoomSaveData { UpgradeLevel = 2 };
+rs.Animals.Add(new LedgerAnimal { Room = RoomType.Chicken, TypeKey = "White Chicken", AgeDays = 5, Friendship = 300, Happiness = 200 });
+rs.ProduceStacks["(O)176"] = 3;
+var lg = AnimalLedger.FromRoom(rs);
+Check("fromroom animals", lg.Animals.Count == 1);
+Check("fromroom animal fields", lg.Animals[0].Friendship == 300 && lg.Animals[0].AgeDays == 5);
+Check("fromroom stacks", lg.ProduceStacks["(O)176"] == 3);
+lg.ProduceStacks["(O)176"] = 5;
+lg.ProduceCount = 7;
+lg.SaveTo(rs);
+Check("saveto stacks", rs.ProduceStacks["(O)176"] == 5);
+Check("saveto count", rs.ProduceCount == 7);
+Check("saveto animals", rs.Animals.Count == 1 && rs.Animals[0].Friendship == 300);
+
 Console.WriteLine(failures == 0 ? "ALL PASS" : $"{failures} FAILURES");
 return failures == 0 ? 0 : 1;
