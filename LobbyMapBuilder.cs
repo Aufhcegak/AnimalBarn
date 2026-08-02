@@ -37,6 +37,23 @@ public static class LobbyMapBuilder
     public const int DoorX = Width / 2;
     public const int DoorY = Height - 1;
 
+    /// <summary>8 个房间门洞(墙缺口):(房间, 门洞 tile 坐标)。玩家站在缺口 tile 上 →
+    /// LobbyDoors.TryEnterDoor 触发 warp 进房间。北墙 3 门在底座行 y=1(y=0 顶墙保留 → 1 格高门洞,
+    /// 与原版门一致),西/东墙各 2 门,南墙 1 门(羊场门,避开出口门洞 x=5-7)。</summary>
+    public static readonly (RoomType Room, int X, int Y)[] DoorPositions =
+    {
+        (RoomType.Chicken,  3, 1),   // 北墙(底座行)
+        (RoomType.Duck,     6, 1),
+        (RoomType.Rabbit,   9, 1),
+        (RoomType.Dinosaur, 0, 4),   // 西墙
+        (RoomType.Ostrich,  12, 4),  // 东墙
+        (RoomType.Pig,      12, 7),
+        (RoomType.Cow,      0, 7),
+        (RoomType.Goat,     9, 8),   // 南墙(避开出口 x=5-7)
+    };
+
+    private static bool IsDoorTile(int x, int y) => DoorPositions.Any(d => d.X == x && d.Y == y);
+
     public static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
     {
         if (e.Name.IsEquivalentTo("Maps/" + MapAssetName))
@@ -72,26 +89,34 @@ public static class LobbyMapBuilder
             for (int y = 0; y < Height; y++)
                 back.Tiles[x, y] = new StaticTile(back, floorSheet, BlendMode.Alpha, (y % 2 == 0) ? FloorA : FloorB);
 
-        // 顶墙:WallTop 一行 + 下面 Baseboard 一行(封底)
+        // 顶墙:WallTop 一行 + 下面 Baseboard 一行(封底)。
+        // 北墙 3 扇房间门开在底座行 y=1(门洞上方 y=0 顶墙保留 → 1 格高门洞,与原版门一致)。
         for (int x = 0; x < Width; x++)
         {
             buildings.Tiles[x, 0] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallTop);
-            buildings.Tiles[x, 1] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, Baseboard);
+            if (!IsDoorTile(x, 1))
+                buildings.Tiles[x, 1] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, Baseboard);
         }
-        // 两侧墙
+        // 两侧墙(西墙门:恐龙 y=4、牛 y=7;东墙门:鸵鸟 y=4、猪 y=7 —— 门洞位置留空)
         for (int y = 0; y < Height; y++)
         {
-            buildings.Tiles[0, y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallSide);
-            buildings.Tiles[Width - 1, y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallSide);
+            if (!IsDoorTile(0, y))
+                buildings.Tiles[0, y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallSide);
+            if (!IsDoorTile(Width - 1, y))
+                buildings.Tiles[Width - 1, y] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallSide);
         }
         // 四角
         buildings.Tiles[0, 0] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallCorner);
         buildings.Tiles[Width - 1, 0] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, WallCorner);
-        // 边界环:底行全 Baseboard(防穿墙),中央留 3 格门洞
+        // 边界环:底行全 Baseboard(防穿墙),中央留 3 格出口门洞 (x=5,6,7) + 羊场门洞 (9,8)
         for (int x = 0; x < Width; x++)
-            buildings.Tiles[x, Height - 1] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, Baseboard);
-        for (int x = Width / 2 - 1; x <= Width / 2 + 1; x++)
-            buildings.Tiles[x, Height - 1] = null;
+            if (x < Width / 2 - 1 || x > Width / 2 + 1)   // 跳过出口门洞 x=5,6,7
+                if (!IsDoorTile(x, Height - 1))
+                    buildings.Tiles[x, Height - 1] = new StaticTile(buildings, interiorSheet, BlendMode.Alpha, Baseboard);
+
+        // 门洞视觉:每个门洞在 Back 层放一块门垫地板(336),让缺口看起来是"门口"而不是破洞。
+        foreach (var (_, x, y) in DoorPositions)
+            back.Tiles[x, y] = new StaticTile(back, floorSheet, BlendMode.Alpha, FloorA);
 
         // AutoFeed 属性(AnimalHouse 自动喂食用;大堂无动物,但统一加无妨)
         map.Properties["AutoFeed"] = "T";
