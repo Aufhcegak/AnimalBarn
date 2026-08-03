@@ -116,7 +116,7 @@ public static class BarnPatches
         foreach (var building in barn.FindAllBarns())
         {
             var state = barn.GetOrCreate(building);
-            SettlementService.SettleAllRooms(state);
+            SettlementService.SettleAllRooms(state, building);
         }
     }
 
