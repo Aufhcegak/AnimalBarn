@@ -32,14 +32,31 @@ public class BarnManager
         return state;
     }
 
-    /// <summary>把所有状态写回各自建筑的 modData。</summary>
+    /// <summary>把所有状态写回各自建筑的 modData。
+    /// ⚠️ 稳健化:不依赖 _states 缓存(缓存可能因 ClearCache/未 GetOrCreate 而缺失,
+    /// 导致"买鸡后存档里 Animals 为空" —— 用户实测根因)。直接遍历所有养殖场建筑,
+    /// 从 modData 读最新状态(访客 NetField 同步的 / 主机缓存的)再写回,双保险落盘。</summary>
     public void SaveAll()
     {
-        foreach (var (id, state) in _states)
+        foreach (var b in FindAllBarnsIncludingUnderConstruction())
         {
-            var b = FindBuildingById(id);
-            if (b != null) SaveSerializer.Save(b, state);
+            // 从缓存读(若有),否则从 modData 读 —— 确保不丢任何已存在状态
+            var state = SaveSerializer.Load(b) ?? new BarnSaveData();
+            if (_states.TryGetValue(b.id.Value, out var cached))
+                state = cached;
+            SaveSerializer.Save(b, state);
         }
+    }
+
+    /// <summary>查找所有养殖场建筑(含建造中)。</summary>
+    public List<Building> FindAllBarnsIncludingUnderConstruction()
+    {
+        var result = new List<Building>();
+        foreach (var loc in Game1.locations)
+            foreach (var b in loc.buildings)
+                if (b.buildingType.Value == BuildingId)
+                    result.Add(b);
+        return result;
     }
 
     /// <summary>清空缓存(读档后调用,让状态重新从 modData 加载)。</summary>
