@@ -31,6 +31,8 @@ public class ModEntry : Mod
         SettlementService.Current = this.Barn;
         AutoGrabberInterceptor.Barn = this.Barn;
         DemolitionGuard.Barn = this.Barn;
+        // 联机同步层(主机权威状态 + 访客请求/写操作转发)
+        MultiplayerSync.Init(helper, this.Monitor, this.Barn);
 
         // 游戏循环:大堂门检测 + 存档生命周期 + 建筑级每日结算
         helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
