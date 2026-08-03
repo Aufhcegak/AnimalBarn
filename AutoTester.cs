@@ -71,7 +71,7 @@ public static class AutoTester
         // 3. 手动结算(与 DayStarted 同路径:建筑级结算所有房间)
         int hayBefore = state.HayStock;
         if (hayBefore < 10) state.HayStock = 100;   // 保证有草可扣
-        SettlementService.SettleAllRooms(state);
+        SettlementService.SettleAllRooms(state, null);
 
         // 4. 检查结果
         var roomAfter = state.GetRoom(RoomType.Chicken);
