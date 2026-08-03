@@ -58,14 +58,24 @@ public class RoomSelectMenu : IClickableMenu
             if (b.bounds.Contains(x, y) && b.name != null && b.name.StartsWith("go:"))
             {
                 var room = Enum.Parse<RoomType>(b.name[3..]);
-                var roomState = _state.GetRoom(RoomDefinitions.RoomFor(room));
-                if (!UpgradeSystem.IsUnlocked(RoomDefinitions.RoomFor(room), _state.OverallLevel))
+                var roomType = RoomDefinitions.RoomFor(room);
+                if (!UpgradeSystem.IsUnlocked(roomType, _state.OverallLevel))
                 {
                     Game1.showRedMessage("该房间尚未解锁(升级养殖场以解锁)");
                     return;
                 }
 
-                var target = RoomManager.GetOrCreate(_building, RoomDefinitions.RoomFor(room), _hall);
+                if (!Game1.IsMasterGame)
+                {
+                    // 联机黑屏修复:访客不能自己创建房间(主机 RequireLocation 找不到 = 黑屏)。
+                    // 请主机创建房间并回 ack,收到后再 warp。
+                    Game1.activeClickableMenu = null;
+                    Game1.showRedMessage("正在请求房主准备房间…");
+                    MultiplayerSync.RequestEnterRoom(_building, roomType);
+                    return;
+                }
+
+                var target = RoomManager.GetOrCreate(_building, roomType, _hall);
                 if (target == null) return;
 
                 RoomAnimalRenderer.EnsureVisibleOnEnter(target);
