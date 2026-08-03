@@ -201,7 +201,10 @@ public static class MultiplayerSync
                 var parts = payload.Arg.Split('|');
                 string id = parts.Length > 0 ? parts[0] : payload.Arg;
                 int quality = parts.Length > 1 && int.TryParse(parts[1], out int q) ? q : 0;
-                RemoveProduce(state, id, quality, payload.Quantity);
+                // 主机权威扣减:校验库存,不足则按实际扣(防访客重复请求超扣 = 刷蛋)
+                int removed = RemoveProduce(state, id, quality, payload.Quantity);
+                if (removed < payload.Quantity)
+                    _monitor.Log($"[ab_sync] 扣减不足: {id} 请求 {payload.Quantity} 实际 {removed}(访客端库存与主机不同步,已按实际扣)", LogLevel.Warn);
                 break;
             }
 
@@ -222,8 +225,8 @@ public static class MultiplayerSync
         _monitor.Log($"[ab_sync] 主机已执行访客操作 {payload.Op}({payload.Arg} x{payload.Quantity})", LogLevel.Info);
     }
 
-    /// <summary>从所有房间扣减指定产品堆叠(按星级)。</summary>
-    private static void RemoveProduce(BarnSaveData state, string id, int quality, int take)
+    /// <summary>从所有房间扣减指定产品堆叠(按星级)。返回实际扣减数量(库存不足则按实际)。</summary>
+    private static int RemoveProduce(BarnSaveData state, string id, int quality, int take)
     {
         string key = AutoGrabberInterceptor.ProduceKey(id, quality);
         int remaining = take;
@@ -237,6 +240,7 @@ public static class MultiplayerSync
             remaining -= removed;
             if (roomState.ProduceStacks[key] <= 0) roomState.ProduceStacks.Remove(key);
         }
+        return take - remaining;   // 实际扣了多少
     }
 
     /// <summary>主机:访客请求进房间 → 确保房间在主机存在(黑屏根因:访客 warp 到主机没有的地点)。
