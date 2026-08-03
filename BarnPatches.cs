@@ -27,6 +27,20 @@ public static class BarnPatches
             original: AccessTools.Method(typeof(StardewValley.FarmAnimal), "getMoodMessage"),
             prefix: new HarmonyMethod(typeof(BarnPatches), nameof(BeforeGetMoodMessage))   // 动物心情提示:永远"开心"
         );
+        harmony.Patch(
+            original: AccessTools.Method(typeof(StardewValley.FarmAnimal), "setRandomPosition"),
+            prefix: new HarmonyMethod(typeof(BarnPatches), nameof(BeforeSetRandomPosition))   // 动物随机站位:强制动物区
+        );
+    }
+
+    /// <summary>动物随机站位 prefix:原版 setRandomPosition 用 ProduceArea 随机(我们设了 "2 3 11 6"
+    /// 覆盖中间走道 → 动物被随机到中间 = "刷中间"真根因!)。强制动物落在动物区(左 x=1..4 / 右 x=10..13),
+    /// 避开中央走道。返回 false 跳过原版(自己定位)。</summary>
+    private static bool BeforeSetRandomPosition(StardewValley.FarmAnimal __instance, GameLocation location)
+    {
+        if (location == null || !AnimalBarnLocations.TryGetRoomType(location, out _)) return true;   // 非养殖场房间放行原版
+        __instance.Position = RoomAnimalRenderer.FindOpenPosition(location as StardewValley.AnimalHouse ?? (StardewValley.AnimalHouse)location);
+        return false;
     }
 
     /// <summary>动物心情提示 prefix:养殖场动物【永远显示开心】(自动抚摸机效果)。
@@ -71,6 +85,14 @@ public static class BarnPatches
                 animal.fullness.Value = 255;   // 喂饱(255 > 200,原版不判饿)
                 state.HayStock--;
             }
+
+            // ⚠️ 动物归位:原版每天 18:30 调 warpHome → setRandomPosition 随机放位置(含中间走道)!
+            // (GameLocation.cs:7116 + FarmAnimal.cs:1244 源码实锤)。每天结算前强制拉回动物区,
+            // 动物永远在两侧栅栏圈内,不出现在中间走道。
+            if (animal.TilePoint.X >= 6 && animal.TilePoint.X <= 8)   // 在中央走道
+            {
+                animal.Position = RoomAnimalRenderer.FindOpenPosition(__instance);
+            }
         }
     }
 
@@ -111,6 +133,9 @@ public static class BarnPatches
             {
                 var building = __instance.ParentBuilding;
                 if (building == null || ModEntry.Instance.Barn == null) return true;
+                // 联机:访客打开房间菜单前请求主机落盘状态
+                if (!Game1.IsMasterGame)
+                    MultiplayerSync.RequestStateFromHost();
                 Game1.activeClickableMenu = new RoomSelectMenu(__instance, building, ModEntry.Instance.Barn);
                 Game1.playSound("bigSelect");
                 return false;
@@ -120,6 +145,9 @@ public static class BarnPatches
             var barn = ModEntry.Instance.Barn;
             var lobbyBuilding = __instance.ParentBuilding;
             if (barn == null || lobbyBuilding == null) return true;
+            // 联机:访客打开中枢前请求主机落盘状态(modData NetField 同步过来后读到最新)
+            if (!Game1.IsMasterGame)
+                MultiplayerSync.RequestStateFromHost();
             var state = barn.GetOrCreate(lobbyBuilding);
             var snapshot = HubSnapshotBuilder.Build(state);
             Game1.activeClickableMenu = new HubMenu(snapshot, barn, lobbyBuilding);
