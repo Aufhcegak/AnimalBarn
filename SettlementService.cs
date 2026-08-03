@@ -32,26 +32,41 @@ public static class SettlementService
         // 2. 实体↔台账同步(实体结算已由 base.DayUpdate 完成,把实体最终值写回台账)
         SyncLedgerFromEntities(room, roomType, ledger);
 
-        // 3. 台账结算(干草从全局库存扣;实体动物的干草由原生 AutoFeed 免费喂食,两套独立)。
-        //    实体动物已由 base.DayUpdate 完成原生结算(产蛋/好感),台账必须跳过它们,
-        //    否则同一只鸡一天双蛋、好感双涨 —— 这就是双结算 bug 的根源。
+        // 3. 台账结算(干草从全局库存扣)。
+        //    实体动物由原生 AutoFeed 喂食【但依赖筒仓】—— 玩家没筒仓 → 实体永远饿着不产!
+        //    修复:实体动物也走全局干草系统(不依赖筒仓):扣除全局 HayStock、满饱食 → 第二天原生产蛋。
+        //    台账动物照常 SettleDay(排除实体,防双结算)。
+        //    自动抚摸机效果:每房间相当于装了自动抚摸机,1级房间=一半效果、满级房间=一倍效果。
+        //    原版自动抚摸机(pet() 源码 is_auto_pet):好感+8/天,心情+30+HappinessDrain(鸡=40)。
+        float petScale = 0.5f + 0.5f * (roomState.UpgradeLevel / 5f);   // 0级=0.5, 5级=1.0
+        int autoPetFriendship = (int)Math.Round(8 * petScale);
+        int autoPetHappiness = (int)Math.Round(40 * petScale);
         var ctx = new SettleContext(
-            FriendshipGain: UpgradeSystem.FriendshipGainAt(state.OverallLevel),
-            HappinessGain: 20);
+            FriendshipGain: autoPetFriendship,
+            HappinessGain: autoPetHappiness);
         var entityIds = room is AnimalHouse ah0 ? GetEntityIds(ah0) : null;
         var hay = ledger.SettleDay(ctx, state.HayStock, entityIds);
+
+        // ⚠️ 实体动物喂食已在 BarnPatches.BeforeDayUpdate(原生结算前)完成(喂饱+扣草),
+        // 这里【不重复扣草】—— 否则同一批实体可能双扣。
         state.HayStock = Math.Max(0, state.HayStock - hay.HayConsumed);
 
-        // 4. 实体动物自动护理:好感按整体等级补增 + wasAutoPet 标记,防止原生结算里
-        //    "没被摸过" 的衰减(farmAnimal.dayUpdate: !wasPet && !wasAutoPet → 好感-1%~-9%、心情-50)
+        // 4. 实体动物自动护理 = 【每个房间装了一台自动抚摸机】:
+        //    1级房间 = 自动抚摸机一半效果,满级房间 = 一倍效果(AutoPetter 原版:好感+15、心情+5/天)。
+        //    wasAutoPet=true → 动物判定"已被抚摸"(在屋里被照顾),不会掉心情/好感。
         if (room is AnimalHouse ah)
         {
             foreach (var animal in ah.animals.Values)
             {
                 animal.friendshipTowardFarmer.Value = Math.Min(1000,
                     animal.friendshipTowardFarmer.Value + ctx.FriendshipGain);
-                animal.wasAutoPet.Value = true;   // 视为已自动抚摸,防原生衰减
+                animal.happiness.Value = (byte)Math.Min(255,
+                    animal.happiness.Value + ctx.HappinessGain);
+                animal.wasAutoPet.Value = true;   // 判定"在屋里被自动抚摸",防"关外面"的心情/好感衰减
             }
+
+            // 动物归位:每天把实体动物拉回【动物区】(左右栅栏和墙之间),防止它们逛到中央走道(人走)。
+            RoomAnimalRenderer.RepositionAnimalsToPens(ah);
         }
 
         // 5. 台账写回
@@ -65,6 +80,34 @@ public static class SettlementService
         foreach (var animal in ah.animals.Values)
             ids.Add(animal.myID.Value);
         return ids;
+    }
+
+    /// <summary>【建筑级结算】:某建筑所有房间的台账每日结算(不管房间地图创建没)。
+    /// ⚠️ 只有已创建的房间才有实体动物(原生 DayUpdate 已结算它们 → 台账跳过)。
+    /// 未创建房间 = 纯台账 → 全部结算。这是"买 100 只鸡只有 3 个蛋"的修复:
+    /// 此前只结算已创建房间,没进门的房间台账永远不产。</summary>
+    public static void SettleAllRooms(BarnSaveData state)
+    {
+        foreach (var (roomKey, roomState) in state.Rooms.ToList())
+        {
+            if (!Enum.TryParse<RoomType>(roomKey, out var roomType)) continue;
+
+            // 自动抚摸机效果(按房间等级:1级=一半,满级=一倍;原版 AutoPetter 好感+8/心情+40)
+            float petScale = 0.5f + 0.5f * (roomState.UpgradeLevel / 5f);
+            var ctx = new SettleContext(
+                FriendshipGain: (int)Math.Round(8 * petScale),
+                HappinessGain: (int)Math.Round(40 * petScale));
+
+            var ledger = AnimalLedger.FromRoom(roomState);
+            ledger.Capacity = UpgradeSystem.CapacityAt(roomType, roomState.UpgradeLevel);
+
+            // 该房间的实体动物 id(已创建房间才有;未创建 = 空 = 全部台账结算)
+            var entityIds = RoomManager.GetExistingRoomAnimals(roomType);
+            var hay = ledger.SettleDay(ctx, state.HayStock, entityIds);
+            state.HayStock = Math.Max(0, state.HayStock - hay.HayConsumed);
+
+            ledger.SaveTo(roomState);
+        }
     }
 
     /// <summary>把实体动物的最终值(结算后)同步回台账记录;实体不在台账(如直接购买)则加入。

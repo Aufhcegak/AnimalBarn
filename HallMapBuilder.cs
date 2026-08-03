@@ -44,9 +44,11 @@ public static class HallMapBuilder
 
         BarnMapRecipe.FillFloor(back, sheet, Width, Height, FloorWood);
 
-        // 顶部 3 行墙体 + 窗户点缀(无北门)
-        int[] windows = { 2, 5, 8 };
-        BarnMapRecipe.BuildWalls(back, buildings, sheet, Width, Height, northDoorXs: null, windows);
+        // 顶部 3 行墙体(顶墙框 + 墙带 + 墙裙),北墙中央入口(门厅门,与房间一致:北入南出)
+        int[] northDoors = { DoorX };
+        int[] windows = { 2, 5, 8 };   // 墙带窗(避开中央门)
+        BarnMapRecipe.BuildWalls(back, buildings, sheet, Width, Height, northDoors, windows);
+        BarnMapRecipe.CutNorthDoor(buildings, DoorX);
         BarnMapRecipe.AddWallDecor(buildings, sheet, Width, cobweb: true, hook: true);
 
         // 左右两列整列封死(防穿墙)

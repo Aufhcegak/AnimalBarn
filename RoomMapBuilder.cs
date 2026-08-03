@@ -82,16 +82,18 @@ public static class RoomMapBuilder
 
         // 干草槽:Back 层 y=3(活动区第一行,墙裙 y2 之下,无遮挡)加 Trough 属性
         // (AnimalHouse.feedAllAnimals 扫描 "Trough"/"Back" 属性喂食),并铺干草块(18)做视觉标识。
-        // 全宽一排(动物区就在中间大片区域),留出北入口列。
+        // 全宽一排(动物区就在中间大片区域),留出中央走道 x=6..8。
         for (int x = 2; x <= Width - 3; x++)
         {
-            if (x == DoorX) continue;   // 北入口列留空
+            if (x >= 6 && x <= 8) continue;   // 中央走道(3列)留空
             back.Tiles[x, 3] = new StaticTile(back, sheet, BlendMode.Alpha, 18);
             back.Tiles[x, 3].Properties["Trough"] = "T";
         }
-        // 中央竖走道(北入口→南出口,浅色板,人走),x=DoorX 贯穿
-        for (int y = 3; y <= DoorY; y++)
-            back.Tiles[DoorX, y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorLight);
+        // 中央走道【统一地板】(不铺浅色板 —— 用户要求地板统一,不留不同颜色)。
+        // 走道就是主题地板(已全铺),北入口→南出口自然贯通。
+
+        // NOTE:栅栏用【原版 Fence 对象】(RoomManager.BuildFences 建房间时放,原版栅栏+栅栏门视觉),
+        // 不在地图铺自定义栅栏 tile —— 保持原版栅栏外观(用户要求)。
 
         // 干草点缀:在中央大片区域(y>=4)撒几撮干草,营造畜棚氛围(每房种子固定)。
         var rng = new System.Random(seed);
@@ -100,7 +102,7 @@ public static class RoomMapBuilder
         {
             int x = rng.Next(2, Width - 2);
             int y = rng.Next(4, Height - 2);
-            if (x == DoorX) continue;   // 中央走道不留
+            if (x >= 6 && x <= 8) continue;   // 中央走道不留
             int hay = HayScatter[rng.Next(HayScatter.Length)];
             back.Tiles[x, y] = new StaticTile(back, sheet, BlendMode.Alpha, hay);
         }
@@ -117,6 +119,7 @@ public static class RoomMapBuilder
 
         // 出楼 warp:门洞中心 -> Farm。updateWarps() 读取本属性,ParentBuilding.updateInteriorWarps()
         // 把 TargetName=="Farm" 的 warp 改写为建筑 HumanDoor 绝对坐标。无此属性进入房间即崩溃。
+        // NOTE:原版 Warp 属性【单格触发】,多 warp 用换行分隔(不能用 |,会把整个属性解析坏 → 无出口)。
         map.Properties["Warp"] = $"{DoorX} {DoorY} Farm 0 0";
 
         return map;

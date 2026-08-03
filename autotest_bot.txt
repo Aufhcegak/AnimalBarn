@@ -1,0 +1,9 @@
+=== AutoTester start ===
+INFO barn found id=cf7a82a4-7336-4479-a8ab-6d8a0f505cc6
+INFO overallLevel=5 hay=18470
+PASS already has 51 chickens
+INFO after settle: chickens=51 produceCount=210 hay=18470 (was 18470)
+PASS chickens produced (210 个蛋/奶)
+PASS friendship grew (192)
+FAIL hay not consumed(动物不饿?)
+INFO produce stacks: (O)176|0=210

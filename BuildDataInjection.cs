@@ -10,6 +10,9 @@ public static class BuildDataInjection
 {
     public const string BuildingId = "xiepe.AnimalBarn";
 
+    /// <summary>中枢电脑自定义大件 ID(Data/BigCraftables 注入,原版 Object 构造存档安全)。</summary>
+    public const string HubItemId = "xiepe.AnimalBarn.Hub";
+
     public static void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
     {
         // 自定义建筑外观贴图(mod assets 里的 PNG,绿顶+暖棕涂装)
@@ -33,6 +36,41 @@ public static class BuildDataInjection
             return;
         }
 
+        // 自定义大件物品:中枢电脑(不跟原版农场电脑重名!F1 显示"养殖场中枢电脑")。
+        // 用 Data/BigCraftables 注入自定义 ID → 原版 Object 构造该 ID → 存档安全 + 自定义名/描述/贴图。
+        if (e.Name.IsEquivalentTo("Data/BigCraftables"))
+        {
+            e.Edit(asset =>
+            {
+                var data = asset.AsDictionary<string, StardewValley.GameData.BigCraftables.BigCraftableData>().Data;
+                data[HubItemId] = new StardewValley.GameData.BigCraftables.BigCraftableData
+                {
+                    Name = "养殖场中枢电脑",
+                    DisplayName = "养殖场中枢电脑",
+                    Description = "养殖场的管理终端:购买动物、升级房间、取产品、管理干草。",
+                    Price = 0,
+                    Fragility = 2,   // 放上后不可移除(中枢是固定设施)
+                    Texture = "xiepe.AnimalBarn/HubComputer",
+                    SpriteIndex = 0,
+                };
+            });
+            return;
+        }
+
+        // 动物房门贴图(大堂北墙的小门,右键直接进选房间菜单)
+        if (e.Name.IsEquivalentTo("xiepe.AnimalBarn/Door"))
+        {
+            e.LoadFromModFile<Microsoft.Xna.Framework.Graphics.Texture2D>("assets/AnimalBarnDoor.png", AssetLoadPriority.Medium);
+            return;
+        }
+
+        // 房间栅栏贴图(木栅栏:横栏+竖桩,铺 Buildings 层物理阻挡)
+        if (e.Name.IsEquivalentTo("xiepe.AnimalBarn/Fence"))
+        {
+            e.LoadFromModFile<Microsoft.Xna.Framework.Graphics.Texture2D>("assets/AnimalBarnFence.png", AssetLoadPriority.Medium);
+            return;
+        }
+
         if (e.Name.IsEquivalentTo("Data/Buildings"))
         {
             e.Edit(asset =>
@@ -42,8 +80,7 @@ public static class BuildDataInjection
                 {
                     data[BuildingId] = new BuildingData
                     {
-                        Name = "动物养殖场",
-                        Description = "大型动物养殖设施。内含 8 个可独立升级的动物房间与干草房,全自动管理。",
+                        Name = "动物养殖场",                        Description = "大型动物养殖设施。内含 8 个可独立升级的动物房间与干草房,全自动管理。",
                         Builder = "Robin",
                         BuildCost = 50000,
                         BuildMaterials = new List<BuildingMaterial>
@@ -54,6 +91,8 @@ public static class BuildDataInjection
                         BuildDays = 2,
                         Size = new Point(7, 4),       // 与原版 Barn 相同
                         HumanDoor = new Point(1, 3),  // 与原版 Barn 一致(建筑左下门,Y=3 在 Size 高度 4 范围内;此前设 (3,4) 越界导致点门无反应)
+                        // ⚠️ 不配 AnimalDoor:配了游戏会把动物放出去(白天出去吃草) → 违背"动物在栅栏里"。
+                        // 动物"被关在外面"的显示由 currentLocation 修复(EnsureVisibleOnEnter 补设)。
                         Texture = "xiepe.AnimalBarn/Building",   // 自定义涂装外观(绿顶+暖棕),由下方 OnAssetRequested 提供 PNG
                         IndoorMap = "xiepe.AnimalBarn.Lobby",
                         IndoorMapType = "StardewValley.AnimalHouse, Stardew Valley",  // 原版类型:自定义类会存档序列化崩溃

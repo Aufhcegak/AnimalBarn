@@ -33,18 +33,23 @@ public static class LobbyMapBuilder
     public const int DoorX = Width / 2;
     public const int DoorY = Height - 1;
 
-    /// <summary>门厅门(唯一):西墙(凹进,门后是墙,杜绝踩空) x=1, y=4。
-    /// 玩家走到这格 → 触发 warp 进【门厅】(LobbyDoors.TryEnterDoor)。</summary>
-    public static readonly Point HallDoor = new(1, 4);
+    /// <summary>动物房门(统一入口):北墙中央 (x=DoorX, y=1 墙带行),门洞上方 y=0 顶墙保留。
+    /// 玩家右键门 → 直接弹【房间选择菜单】选房间进(统一门形态,不要 9 扇门)。
+    /// 门洞挖到底(y1+y2 贯通),门贴图+挡人由运行时门对象处理。</summary>
+    public static readonly Point HallDoor = new(DoorX, 1);
 
     /// <summary>中枢操作台位置(大堂中央,玩家点击打开中枢菜单)。</summary>
     public static readonly Point HubTile = new(6, 4);
 
-    /// <summary>是否中枢台 tile(玩家点击打开中枢菜单)。</summary>
-    public static bool IsHubTile(int x, int y) => x == HubTile.X && y == HubTile.Y;
+    /// <summary>中枢交互区:电脑台 (6,4) 及周围一圈(3x3)。玩家点电脑台本身、或被电脑挡住
+    /// 只能点到旁边时,都能打开中枢菜单 —— 避免"点了没反应"。</summary>
+    public static bool IsHubTile(int x, int y)
+        => Math.Abs(x - HubTile.X) <= 1 && Math.Abs(y - HubTile.Y) <= 1;
 
-    /// <summary>是否门厅门 tile(玩家站上 → 进门厅)。</summary>
-    public static bool IsHallDoorTile(int x, int y) => x == HallDoor.X && y == HallDoor.Y;
+    /// <summary>门厅门触发区(已废弃门厅版):北墙中央门洞 (DoorX,1)。右键门 → 选房间菜单。
+    /// 玩家往上走向门,走到门口附近就有反应(不用精确踩门洞格)。</summary>
+    public static bool IsHallDoorTile(int x, int y)
+        => x == HallDoor.X && (y == HallDoor.Y || y == HallDoor.Y + 1 || y == HallDoor.Y + 2);
 
     /// <summary>房间 → plaque tilesheet 列(与 assets/AnimalBarnPlaques.png 的图标顺序一致:
     /// 0鸡 1鸭 2兔 3恐龙 4鸵鸟 5猪 6山羊 7牛)。羊场(Goat,绵羊+山羊共用)挂山羊牌。</summary>
@@ -77,35 +82,39 @@ public static class LobbyMapBuilder
         // 地板:全铺干净木地板
         BarnMapRecipe.FillFloor(back, sheet, Width, Height, FloorWood);
 
-        // 顶部 3 行墙体(顶墙框 + 墙带 + 墙裙),北墙无门(统一入口在门厅,这里只有窗+装饰)
-        int[] windows = { 3, 6, 10 };   // 墙带窗
-        BarnMapRecipe.BuildWalls(back, buildings, sheet, Width, Height, northDoorXs: null, windows);
+        // 顶部 3 行墙体(顶墙框 + 墙带 + 墙裙),北墙中央动物房门 + 窗户点缀
+        int[] northDoors = { DoorX };
+        int[] windows = { 2, 4, 8, 10 };
+        BarnMapRecipe.BuildWalls(back, buildings, sheet, Width, Height, northDoors, windows);
         BarnMapRecipe.AddWallDecor(buildings, sheet, Width, cobweb: true, hook: true);
 
-        // 门厅门:西墙凹进门(x=1, y=4),门后 x=0 是实心墙(杜绝踩空)。
-        // 整列封死 + 单格挖开。
-        BarnMapRecipe.SealSides(buildings, sheet, Width, Height);
-        buildings.Tiles[1, 4] = null;   // 门洞(玩家站上 → warp 进门厅)
+        // 动物房门:门洞 1 格(y1 挖空,y2 墙裙保留=物理墙)。
+        // 门贴图 = townInterior tile 165(原版农舍门板,反射 dump 确认 FarmHouse Front 层门洞用 165)。
+        // 铺 Front 层门洞格(门板)。doors 字典负责挡人+动画(EnsureDoor)。
+        BarnMapRecipe.CutNorthDoor(buildings, DoorX);
+        back.Tiles[HallDoor.X, HallDoor.Y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorWalkway);   // 门洞地板
+        // 门板贴图:Front 层门洞格(像农舍门板)
+        var townSheet = BarnMapRecipe.AddExtraTileSheet(map, "townDoor", "Maps\\townInterior", 32, 68);
+        front.Tiles[HallDoor.X, HallDoor.Y] = new StaticTile(front, townSheet, BlendMode.Alpha, 165);   // 原版门板
 
-        // 边界环:底行封底,只留中央 1 格出口门洞(x=DoorX),两侧门框柱收口。
+        // 左右两列整列封死(防穿墙)
+        BarnMapRecipe.SealSides(buildings, sheet, Width, Height);
+
+        // 边界环:底行封底,只留中央 1 格出口门洞(x=DoorX,回农场),两侧门框柱收口。
         int[] southDoors = { DoorX };
         BarnMapRecipe.BuildBoundary(buildings, sheet, Width, Height, southDoors);
         BarnMapRecipe.PlaceWallPost(buildings, sheet, DoorX - 1, DoorY, westFacing: true);
         BarnMapRecipe.PlaceWallPost(buildings, sheet, DoorX + 1, DoorY, westFacing: false);
 
-        // 入口→中枢走道:浅色木板引导视线(x=DoorX 一列,从门口 y=8 到中枢 y=4)
-        for (int y = DoorY - 1; y >= HubTile.Y; y--)
-            back.Tiles[DoorX, y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorWalkway);
-        // 中枢台周围一小片走道(3 格宽)
-        for (int x = HubTile.X - 1; x <= HubTile.X + 1; x++)
-            back.Tiles[x, HubTile.Y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorWalkway);
+        // 地板统一:全铺木地板(FillFloor 已做),不留走道浅色板(用户要求统一)。
+        // 中枢台位置由 IsHubTile 交互识别,不需要视觉区分。
 
-        // 门洞视觉:南出口+门厅门口 Back 层保留木地板(门口),避免看起来像破洞。
+        // 中枢电脑台【视觉 = 运行时对象】(HubConsole.EnsureComputer 放原版 Farm Computer,
+        // 用 "239" 无前缀 ID 构造 → 正常原版电脑贴图 + 挡路 + LookupAnything F1 可查)。
+        // 这里不铺地图贴图(避免双层)。点击由 IsHubTile 3x3 触发(BarnPatches)。
+
+        // 南出口门口地板
         back.Tiles[DoorX, DoorY] = new StaticTile(back, sheet, BlendMode.Alpha, FloorWalkway);
-        back.Tiles[HallDoor.X, HallDoor.Y] = new StaticTile(back, sheet, BlendMode.Alpha, FloorWalkway);
-
-        // 门厅门口挂一块小牌(鸡鸭兔恐龙鸵鸟猪山羊牛 8 合一? 挂"门厅"牌 → 用 0 号牌占位,终端在门厅内)。
-        // NOTE:门厅内终端会列全部房间,门口只留一个指示牌(挂钉样式)。
 
         // 中枢操作台(大堂中央):电脑桌造型由运行时对象放(HubConsole.EnsurePlaced),
         // 这里只保留可点击的中枢 tile(走道地板),不占 Buildings 层。

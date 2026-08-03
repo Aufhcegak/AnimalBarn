@@ -61,7 +61,8 @@ public class AnimalLedger
     /// 返回实际消耗的干草数和结算后仍饥饿的成年数(供调用方扣库存/提示)。</summary>
     public SettleHayResult SettleDay(SettleContext ctx, int hayAvailable, HashSet<long>? excludeIds = null)
     {
-        int hungryAdults = Animals.Count(a => a.IsAdult && a.Fullness <= 0 && !IsExcluded(a, excludeIds));
+        // ⚠️ 判"饿"用 fullness < 200(原版 FarmAnimal.dayUpdate 源码: fullness<200 → 心情-100/好感-20)
+        int hungryAdults = Animals.Count(a => a.IsAdult && a.Fullness < 200 && !IsExcluded(a, excludeIds));
         int hayUsed = Math.Min(hayAvailable, hungryAdults);
         int hayConsumed = 0;
 
@@ -70,9 +71,9 @@ public class AnimalLedger
             if (IsExcluded(a, excludeIds)) continue;   // 实体动物:原版已结算,台账不碰
             if (a.IsAdult)
             {
-                if (a.Fullness > 0 || hayUsed > 0)
+                if (a.Fullness >= 200 || hayUsed > 0)
                 {
-                    if (a.Fullness <= 0)
+                    if (a.Fullness < 200)
                     {
                         hayUsed--;
                         hayConsumed++;

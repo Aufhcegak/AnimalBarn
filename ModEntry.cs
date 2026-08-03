@@ -32,19 +32,27 @@ public class ModEntry : Mod
         AutoGrabberInterceptor.Barn = this.Barn;
         DemolitionGuard.Barn = this.Barn;
 
-        // 游戏循环:大堂门检测 + 存档生命周期
+        // 游戏循环:大堂门检测 + 存档生命周期 + 建筑级每日结算
         helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
+        helper.Events.GameLoop.DayStarted += BarnPatches.OnDayStarted;   // 所有房间台账每日结算(修复:没进门的房间不产蛋)
         helper.Events.GameLoop.SaveLoaded += (_, _) => this.Barn.OnSaveLoaded();
         helper.Events.GameLoop.Saving += (_, _) => this.Barn.OnSaving();
 
-        // 集成测试钩子
-        IntegrationTest.Pending = File.Exists(Path.Combine(helper.DirectoryPath, "autotest.txt"));
+        // 集成测试钩子:autotest.txt 触发【游戏内自动验证 bot】(更真实:真实 DayUpdate/保存)。
+        // 无头 autotest(静态检查)仅在无头模式(IsHeadless)跑,避免与 bot 抢结果文件。
+        bool trigger = File.Exists(Path.Combine(helper.DirectoryPath, "autotest.txt"));
+        IntegrationTest.Pending = trigger && !Environment.UserInteractive;   // 无头(非交互)才跑静态 autotest
+        AutoTester.Pending = trigger;
         helper.Events.GameLoop.UpdateTicked += IntegrationTest.OnUpdateTicked;
+        helper.Events.GameLoop.UpdateTicked += AutoTester.OnUpdateTicked;
 
         this.Monitor.Log("AnimalBarn loaded.", LogLevel.Info);
     }
 
-    /// <summary>每 tick:检测玩家站在大堂门厅门 → warp 进门厅;门厅终端放置(幂等);锁清除。</summary>
+    /// <summary>每 tick:大堂中枢电脑台放置(幂等);锁清除。
+    /// ⚠️ 不做动物归位:源码实锤(Character.cs isCollidingPosition + FarmAnimal.cs:861 setRandomPosition
+    /// 避开 objects)原版 Fence 完全挡动物,动物不会跑到过道 —— 每 10 tick 强制改位置是多余的自造轮子,
+    /// 且和原版移动逻辑冲突造成卡顿。已删除。</summary>
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
         if (!Context.IsWorldReady) return;
@@ -52,13 +60,6 @@ public class ModEntry : Mod
         if (AnimalBarnLocations.IsLobby(cur))
         {
             HubConsole.EnsurePlaced(cur);                    // 中枢电脑台(幂等,缺失才补放)
-            var who = Game1.player;
-            if (who != null && who.IsLocalPlayer)
-                LobbyDoors.TryEnterDoor(cur, who, this.Barn);   // 门厅门检测
-        }
-        else if (AnimalBarnLocations.IsHall(cur))
-        {
-            HallTerminal.EnsurePlaced(cur);                  // 门厅终端(幂等)
         }
         LobbyDoors.OnEndOfTick();                            // 清一次性锁(必须:否则第一次进门后锁永不清,所有门失效)
     }

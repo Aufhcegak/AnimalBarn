@@ -53,17 +53,11 @@ public class HubMenu : IClickableMenu
     /// <summary>仓库行区滚动偏移。</summary>
     private int _scroll;
 
-    /// <summary>仓库当前选中的行(点"取走"选中,显示数量选择器)。-1 = 未选中。</summary>
-    private int _selectedRow = -1;
+    /// <summary>仓库页页码(每页 9 行,右侧翻页)。</summary>
+    private int _page;
 
-    /// <summary>数量选择器当前数量。</summary>
-    private int _takeCount = 1;
-
-    /// <summary>数量选择器:滑动条是否被按住拖动中。</summary>
-    private bool _draggingSlider;
-
-    /// <summary>数量选择器:是否键盘输入模式(点数量数字进入,回车确认)。</summary>
-    private bool _typingCount;
+    /// <summary>仓库每页行数(每页 8 行 = 2 个物品×4 星级,塞满不挤)。</summary>
+    private const int PageRows = 8;
 
     /// <summary>最后一次操作的结果消息(内容区底部显示)。</summary>
     private string _notice = "";
@@ -115,34 +109,10 @@ public class HubMenu : IClickableMenu
     /// <summary>当前状态(外部读取用)。</summary>
     public BarnSaveData? State => _barn != null && _building != null ? _barn.GetOrCreate(_building) : null;
 
-    /// <summary>点击处理:页签切换 / 内容按钮 / 数量选择器 / 关闭按钮。</summary>
+    /// <summary>点击处理:页签切换 / 内容按钮 / 关闭按钮。</summary>
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
         base.receiveLeftClick(x, y, playSound); // 处理右上角关闭按钮
-
-        // 点数量数字 → 键盘输入模式
-        if (IsOnCountLabel(x, y))
-        {
-            _typingCount = true;
-            if (playSound) Game1.playSound("smallSelect");
-            return;
-        }
-
-        // 滑动条拖动(先于按钮,因为滑块在按钮区)
-        if (_draggingSlider)
-        {
-            UpdateSliderFromMouse(x);
-            _draggingSlider = false;
-            if (playSound) Game1.playSound("smallSelect");
-            return;
-        }
-        if (IsOnSlider(x, y))
-        {
-            _draggingSlider = true;
-            UpdateSliderFromMouse(x);
-            if (playSound) Game1.playSound("smallSelect");
-            return;
-        }
 
         for (int i = 0; i < _tabRects.Count; i++)
         {
@@ -151,7 +121,6 @@ public class HubMenu : IClickableMenu
                 _tab = (Tab)i;
                 _notice = "";
                 _scroll = 0;
-                _selectedRow = -1;
                 RebuildButtons();
                 if (playSound) Game1.playSound("smallSelect");
                 return;
@@ -170,72 +139,6 @@ public class HubMenu : IClickableMenu
     }
 
     /// <summary>是否滑动条轨道区域(选中行时)。</summary>
-    private bool IsOnSlider(int x, int y)
-    {
-        if (_selectedRow < 0 || _tab != Tab.Warehouse) return false;
-        var stacks = GetAggregatedStacks();
-        if (_selectedRow >= stacks.Count) return false;
-        int selY = yPositionOnScreen + FooterY + 30 + ButtonHeight + 14;
-        int trackX = xPositionOnScreen + ContentLeft + 230;
-        int trackW = 180;
-        return x >= trackX && x <= trackX + trackW && y >= selY && y <= selY + 24;
-    }
-
-    /// <summary>是否数量数字显示区(点击进入键盘输入模式)。</summary>
-    private bool IsOnCountLabel(int x, int y)
-    {
-        if (_selectedRow < 0 || _tab != Tab.Warehouse) return false;
-        int selY = yPositionOnScreen + FooterY + 30 + ButtonHeight + 14;
-        int trackX = xPositionOnScreen + ContentLeft + 230;
-        return x >= trackX + 180 && x <= trackX + 232 && y >= selY && y <= selY + 24;
-    }
-
-    /// <summary>键盘输入:输入模式下数字键累积,回车确认,退格删除。</summary>
-    public override void receiveKeyPress(Keys key)
-    {
-        base.receiveKeyPress(key);
-        if (!_typingCount) return;
-        if (key >= Keys.D0 && key <= Keys.D9)
-        {
-            int digit = key - Keys.D0;
-            int max = _selectedRow >= 0 && _selectedRow < GetAggregatedStacks().Count
-                ? GetAggregatedStacks()[_selectedRow].Count : 999;
-            int next = _takeCount * 10 + digit;
-            _takeCount = Math.Clamp(next, 1, Math.Max(1, max));
-        }
-        else if (key >= Keys.NumPad0 && key <= Keys.NumPad9)
-        {
-            int digit = key - Keys.NumPad0;
-            int max = _selectedRow >= 0 && _selectedRow < GetAggregatedStacks().Count
-                ? GetAggregatedStacks()[_selectedRow].Count : 999;
-            int next = _takeCount * 10 + digit;
-            _takeCount = Math.Clamp(next, 1, Math.Max(1, max));
-        }
-        else if (key == Keys.Back)
-        {
-            _takeCount = Math.Max(1, _takeCount / 10);
-        }
-        else if (key == Keys.Enter)
-        {
-            _typingCount = false;
-            Game1.playSound("smallSelect");
-        }
-        RebuildButtons();
-    }
-
-    /// <summary>按鼠标位置更新滑块数量。</summary>
-    private void UpdateSliderFromMouse(int x)
-    {
-        var stacks = GetAggregatedStacks();
-        if (_selectedRow < 0 || _selectedRow >= stacks.Count) return;
-        int total = stacks[_selectedRow].Count;
-        if (total <= 0) return;
-        int trackX = xPositionOnScreen + ContentLeft + 230;
-        int trackW = 180;
-        float ratio = Math.Clamp((x - trackX) / (float)trackW, 0f, 1f);
-        _takeCount = Math.Clamp((int)Math.Round(ratio * total), 1, total);
-    }
-
     /// <summary>滚轮滚动仓库行区(商店行数固定 9 行,无需滚动)。</summary>
     public override void receiveScrollWheelAction(int direction)
     {
@@ -358,7 +261,7 @@ public class HubMenu : IClickableMenu
             bool maxed = r.UpgradeLevel >= rows.Length - 1;
             bool unlocked = r.Unlocked;
             string text = $"{r.DisplayName}: 等级 {r.UpgradeLevel} · 容量 {r.Capacity}";
-            if (!unlocked) text += " (未解锁)";
+            if (!unlocked) text += "未解锁";
             else if (maxed) text += " (已满级)";
             else
             {
@@ -420,29 +323,54 @@ public class HubMenu : IClickableMenu
         }
         else if (_tab == Tab.Warehouse && HasLiveState())
         {
+            // 取走按钮:按"物品分组 4 星级"分页布局(与 DrawWarehouse 一致)
             var stacks = GetAggregatedStacks();
-            for (int i = 0; i < stacks.Count; i++)
+            var groups = stacks.GroupBy(s => s.Id)
+                .Select(g => new { Id = g.Key, Qualities = g.ToDictionary(x => x.Quality, x => x.Count) })
+                .ToList();
+            int totalRows = groups.Sum(g => 4);
+            int totalPages = Math.Max(1, (totalRows + PageRows - 1) / PageRows);
+            if (_page >= totalPages) _page = totalPages - 1;
+
+            int row = 0, gi = 0;
+            int startRow = _page * PageRows;
+            bool started = false;
+            for (int g = 0; g < groups.Count && !started; g++)
             {
-                int rowY = yPositionOnScreen + RowTop + i * RowHeight - _scroll;
-                if (rowY < yPositionOnScreen + RowTop || rowY > yPositionOnScreen + RowTop + RowAreaHeight - ButtonHeight)
-                    continue;  // 可视区外的行没有按钮
-                _buttons.Add(new ClickableComponent(
-                    new Rectangle(xPositionOnScreen + ButtonColX, rowY - 5, ButtonWidth, ButtonHeight),
-                    $"selectRow:{i}"));
+                if (row + 4 > startRow) { gi = g; started = true; }
+                else row += 4;
             }
+            int rowInPage = startRow - row;
+
+            int drawn = 0;
+            for (int g = gi; g < groups.Count && drawn < PageRows; g++)
+            {
+                for (int q = rowInPage; q < 4 && drawn < PageRows; q++, rowInPage = 0)
+                {
+                    int quality = q switch { 0 => 0, 1 => 1, 2 => 2, 3 => 4 };
+                    int count = groups[g].Qualities.TryGetValue(quality, out int n) ? n : 0;
+                    if (count > 0)
+                    {
+                        int rowY = yPositionOnScreen + RowTop + drawn * RowHeight;
+                        _buttons.Add(new ClickableComponent(
+                            new Rectangle(xPositionOnScreen + ContentLeft + 640, rowY + (RowHeight - ButtonHeight) / 2 - 3, ButtonWidth, ButtonHeight),
+                            $"takeOne:{groups[g].Id}|{quality}"));
+                    }
+                    drawn++;
+                }
+            }
+
+            // 翻页按钮(与 DrawWarehouse 位置一致:FooterY 下方 + 右侧)
+            int pageY = yPositionOnScreen + FooterY + 34;
+            int pageX = xPositionOnScreen + ContentLeft + 640;
+            if (_page > 0)
+                _buttons.Add(new ClickableComponent(new Rectangle(pageX, pageY, 40, ButtonHeight), "pagePrev"));
+            if (_page < totalPages - 1)
+                _buttons.Add(new ClickableComponent(new Rectangle(pageX + 100, pageY, 40, ButtonHeight), "pageNext"));
+
             _buttons.Add(new ClickableComponent(
                 new Rectangle(xPositionOnScreen + ContentLeft, yPositionOnScreen + FooterY + 30, 200, ButtonHeight),
                 "takeAllProduce"));
-            // 数量选择器按钮(选中行时):- / + / 取货
-            if (_selectedRow >= 0 && _selectedRow < stacks.Count)
-            {
-                int selY = yPositionOnScreen + FooterY + 30 + ButtonHeight + 14;
-                int trackX = xPositionOnScreen + ContentLeft + 230;
-                int trackW = 180;
-                _buttons.Add(new ClickableComponent(new Rectangle(trackX + trackW + 56, selY, 28, 24), "takeMinus"));
-                _buttons.Add(new ClickableComponent(new Rectangle(trackX + trackW + 88, selY, 28, 24), "takePlus"));
-                _buttons.Add(new ClickableComponent(new Rectangle(trackX + trackW + 122, selY, 46, 24), "takeSelected"));
-            }
             // NOTE:干草不能取出(用户设计:干草只能买进,不能取出/放入)。只显示库存数。
         }
     }
@@ -476,17 +404,12 @@ public class HubMenu : IClickableMenu
             string note = snap == null
                 ? ""
                 : snap.Unlocked
-                    ? $" ({snap.Count}/{snap.Capacity})"
-                    : " (未解锁)";
-            b.DrawString(Game1.smallFont, $"{name}{note} · {info.BuyPrice}g (原价 {info.VanillaPrice}g)",
+                    ? $" {snap.Count}/{snap.Capacity}"
+                    : " 未解锁";
+            b.DrawString(Game1.smallFont, $"{name}{note} · {info.BuyPrice}g",
                 new Vector2(xPositionOnScreen + ContentLeft, rowY + 4), Game1.textColor);
             DrawButton(b, new Rectangle(xPositionOnScreen + ButtonColX, rowY - 5, ButtonWidth, ButtonHeight), "购买");
         }
-        // 批量提示(原版惯例:shift=5, ctrl+shift=25)
-        b.DrawString(Game1.smallFont,
-            "(shift 买 5 只 · Ctrl+shift 买 25 只)",
-            new Vector2(xPositionOnScreen + ContentLeft, yPositionOnScreen + RowTop + 9 * RowHeight - 6),
-            new Color(120, 120, 120));
 
         // 底部固定区:干草购买(独占一排,不挤)
         b.DrawString(Game1.smallFont,
@@ -504,15 +427,14 @@ public class HubMenu : IClickableMenu
 
     // ============================ 仓库页 ============================
 
-    /// <summary>仓库页:各产品堆叠(图标+名称+星级+数量) + 单取数量选择 + 全部取走。</summary>
+    /// <summary>仓库页:各产品堆叠(图标+名称+星级+数量) + 取走(shift=5/ctrl+shift=25 批量) + 全部取走。</summary>
     private void DrawWarehouse(SpriteBatch b)
     {
         int headerY = yPositionOnScreen + RowTop;
-        b.DrawString(Game1.smallFont, "产品仓库(点击行取货)",
+        b.DrawString(Game1.smallFont, "产品仓库(点击行取货 · shift 取5 · Ctrl+shift 取25)",
             new Vector2(xPositionOnScreen + ContentLeft, headerY - 30), Game1.textColor);
 
         var stacks = GetAggregatedStacks();
-        int offset = Math.Min(_scroll, Math.Max(0, stacks.Count * RowHeight - RowAreaHeight));
 
         if (stacks.Count == 0)
         {
@@ -521,73 +443,78 @@ public class HubMenu : IClickableMenu
         }
         else
         {
-            for (int i = 0; i < stacks.Count; i++)
-            {
-                int rowY = yPositionOnScreen + RowTop + i * RowHeight - offset;
-                if (rowY < yPositionOnScreen + RowTop) continue;
-                if (rowY > yPositionOnScreen + RowTop + RowAreaHeight - 4) break;
+            // 分页:按"物品"分组(同物品所有星级连续排,不分开页),每页 PageRows 行。
+            // 每组 = 该物品 4 个星级(0/1/2/4)全显示(数量 0 也显示 ×0,最整齐)。
+            var groups = stacks.GroupBy(s => s.Id)
+                .Select(g => new { Id = g.Key, Qualities = g.ToDictionary(x => x.Quality, x => x.Count) })
+                .ToList();
+            int totalRows = groups.Sum(g => 4);   // 每组 4 行(普通/银/金/铱)
+            int totalPages = Math.Max(1, (totalRows + PageRows - 1) / PageRows);
+            if (_page >= totalPages) _page = totalPages - 1;
 
-                var (id, quality, count) = stacks[i];
-                var item = ItemRegistry.Create(id);
-                // 选中行高亮
-                if (i == _selectedRow)
-                {
-                    drawTextureBox(b, Game1.menuTexture, MenuBoxSrc,
-                        xPositionOnScreen + ContentLeft - 6, rowY - 8, 560, RowHeight + 4, Color.Gold * 0.35f, 1f, drawShadow: false);
-                }
-                item.drawInMenu(b, new Vector2(xPositionOnScreen + ContentLeft, rowY - 2), 0.85f, 1f, 0.9f);
-                var (starName, starColor) = QualityLabel(quality);
-                string line = starName == ""
-                    ? $"{item.DisplayName} × {count}"
-                    : $"{item.DisplayName} {starName} × {count}";
-                b.DrawString(Game1.smallFont, line,
-                    new Vector2(xPositionOnScreen + ContentLeft + 40, rowY + 6),
-                    quality == 0 ? Game1.textColor : starColor);
-                DrawButton(b, new Rectangle(xPositionOnScreen + ButtonColX, rowY - 5, ButtonWidth, ButtonHeight),
-                    i == _selectedRow ? "数量…" : "取走");
+            // 按页找起始组+组内偏移
+            int row = 0, gi = 0;
+            int startRow = _page * PageRows;
+            bool started = false;
+            for (int g = 0; g < groups.Count && !started; g++)
+            {
+                if (row + 4 > startRow) { gi = g; started = true; }
+                else row += 4;
             }
+            int rowInPage = startRow - row;   // 组内起始偏移(0-3)
+
+            int drawn = 0;
+            for (int g = gi; g < groups.Count && drawn < PageRows; g++)
+            {
+                for (int q = rowInPage; q < 4 && drawn < PageRows; q++, rowInPage = 0)
+                {
+                    int quality = q switch { 0 => 0, 1 => 1, 2 => 2, 3 => 4 };
+                    int count = groups[g].Qualities.TryGetValue(quality, out int n) ? n : 0;
+                    int rowY = yPositionOnScreen + RowTop + drawn * RowHeight;
+                    var item = ItemRegistry.Create(groups[g].Id);
+                    // 贴图 0.6f ≈ 38px 高(等于行高,行内放得下不溢出不重叠),垂直居中
+                    item.drawInMenu(b, new Vector2(xPositionOnScreen + ContentLeft, rowY), 0.6f, 1f, 0.9f);
+                    // 星级:贴图本身带星级样式,文字黑字+括号标星级
+                    string starName = quality switch { 1 => "银星", 2 => "金星", 4 => "铱星", _ => "" };
+                    string namePart = starName == "" ? item.DisplayName : $"{item.DisplayName} ({starName})";
+                    // 文字紧贴贴图右缘(贴图 38px + 间距 24px → x+62),垂直居中;数量固定列;按钮固定列
+                    // 统一间距:贴图-文字 24px,文字-数量列固定,数量-按钮固定 → 所有行对齐
+                    int textX = xPositionOnScreen + ContentLeft + 62;
+                    int textY = rowY + (RowHeight - 16) / 2;   // 文字垂直居中(16px 字高)
+                    int countX = xPositionOnScreen + ContentLeft + 540;
+                    b.DrawString(Game1.smallFont, namePart, new Vector2(textX, textY), Game1.textColor);
+                    b.DrawString(Game1.smallFont, $"× {count}",
+                        new Vector2(countX - Game1.smallFont.MeasureString($"× {count}").X, textY), Game1.textColor);
+                    if (count > 0)
+                        DrawButton(b, new Rectangle(xPositionOnScreen + ContentLeft + 640, rowY + (RowHeight - ButtonHeight) / 2 - 3, ButtonWidth, ButtonHeight), "取走");
+                    drawn++;
+                }
+            }
+
+            // 右侧翻页控件:▲ 上一页 / 页码 / ▼ 下一页。
+            // 位置:往下(FooterY 区,远离条目) + 往右(不与条目按钮列粘)
+            int pageY = yPositionOnScreen + FooterY + 34;
+            int pageX = xPositionOnScreen + ContentLeft + 640;
+            DrawButton(b, new Rectangle(pageX, pageY, 40, ButtonHeight), _page > 0 ? "▲" : "");
+            b.DrawString(Game1.smallFont, $"{_page + 1}/{totalPages}",
+                new Vector2(pageX + 50, pageY + 5), Game1.textColor);
+            DrawButton(b, new Rectangle(pageX + 100, pageY, 40, ButtonHeight), _page < totalPages - 1 ? "▼" : "");
         }
 
-        // 底部固定区:全部取走 + 数量选择器(选中行时)
+        // 底部固定区:全部取走 + 干草库存提示
         int footerY = yPositionOnScreen + FooterY + 30;
         if (HasLiveState())
         {
             DrawButton(b, new Rectangle(xPositionOnScreen + ContentLeft, footerY, 200, ButtonHeight), "全部取走");
             if (GetHayStock() > 0)
             {
-                b.DrawString(Game1.smallFont, $"干草库存: {GetHayStock()} 份(仅供应动物,不可取出)",
+                b.DrawString(Game1.smallFont, $"干草库存: {GetHayStock()} 份",
                     new Vector2(xPositionOnScreen + ContentLeft + 220, footerY + 4), new Color(120, 120, 120));
-            }
-
-            // 数量选择器:选中某行时显示(取 X 个,滑动条/箭头/数字输入)
-            if (_selectedRow >= 0 && _selectedRow < stacks.Count)
-            {
-                var (sid, sq, scount) = stacks[_selectedRow];
-                int selY = footerY + ButtonHeight + 14;
-                b.DrawString(Game1.smallFont,
-                    $"取 {sid.Split('|')[0] switch { var s when s == "(O)176" || s == "(O)180" => "鸡蛋", _ => sid }} {QualityLabel(sq).Name} 数量:",
-                    new Vector2(xPositionOnScreen + ContentLeft, selY), Game1.textColor);
-                // 滑动条轨道
-                int trackX = xPositionOnScreen + ContentLeft + 230;
-                int trackW = 180;
-                b.Draw(Game1.menuTexture, new Rectangle(trackX, selY + 10, trackW, 6), MenuBoxSrc, Color.White * 0.7f);
-                // 滑块(按比例)
-                float ratio = scount <= 1 ? 0f : (float)_takeCount / scount;
-                int thumbX = trackX + (int)(ratio * (trackW - 10));
-                b.Draw(Game1.menuTexture, new Rectangle(thumbX, selY + 4, 10, 18), MenuBoxSrc, Color.Gold);
-                // 数量显示 + 箭头按钮(点数字可键盘输入)
-                b.DrawString(Game1.dialogueFont,
-                    _typingCount ? $"{_takeCount}▌" : $"{_takeCount}",
-                    new Vector2(trackX + trackW + 16, selY - 2),
-                    _typingCount ? Color.Gold : Game1.textColor);
-                DrawButton(b, new Rectangle(trackX + trackW + 56, selY, 28, 24), "-");
-                DrawButton(b, new Rectangle(trackX + trackW + 88, selY, 28, 24), "+");
-                DrawButton(b, new Rectangle(trackX + trackW + 122, selY, 46, 24), "取货");
             }
         }
         else
         {
-            b.DrawString(Game1.smallFont, "(仅展示模式)",
+            b.DrawString(Game1.smallFont, "仅展示模式",
                 new Vector2(xPositionOnScreen + ContentLeft, footerY + 4), new Color(120, 120, 120));
         }
 
@@ -668,10 +595,9 @@ public class HubMenu : IClickableMenu
         {
             case "buyAnimal": BuyAnimal(Enum.TryParse<RoomType>(arg, out var rt) ? rt : RoomType.Chicken); break;
             case "buyHay": BuyHay(int.Parse(arg)); break;
-            case "selectRow": SelectRow(int.Parse(arg)); break;
-            case "takeSelected": TakeSelected(); break;
-            case "takeMinus": TakeMinus(); break;
-            case "takePlus": TakePlus(); break;
+            case "takeOne": TakeOne(arg); break;
+            case "pagePrev": _page = Math.Max(0, _page - 1); RebuildButtons(); break;
+            case "pageNext": _page++; RebuildButtons(); break;
             case "takeAllProduce": TakeAllProduce(); break;
             // 干草不可取出(用户设计:只能买进),withdrawHay 已移除
             case "upgradeOverall": UpgradeOverall(); break;
@@ -679,50 +605,38 @@ public class HubMenu : IClickableMenu
         }
     }
 
-    /// <summary>点击仓库行:选中该行,弹出数量选择器。</summary>
-    private void SelectRow(int index)
-    {
-        var stacks = GetAggregatedStacks();
-        if (index < 0 || index >= stacks.Count) return;
-        _selectedRow = index;
-        _takeCount = 1;
-        RebuildButtons();
-        Notice($"已选择 {stacks[index].Id} {QualityLabel(stacks[index].Quality).Name},用下方滑杆选数量");
-    }
-
-    /// <summary>数量选择器:-。</summary>
-    private void TakeMinus()
-    {
-        _takeCount = Math.Max(1, _takeCount - 1);
-        RebuildButtons();
-    }
-
-    /// <summary>数量选择器:+。</summary>
-    private void TakePlus()
-    {
-        var stacks = GetAggregatedStacks();
-        if (_selectedRow < 0 || _selectedRow >= stacks.Count) return;
-        _takeCount = Math.Min(stacks[_selectedRow].Count, _takeCount + 1);
-        RebuildButtons();
-    }
-
-    /// <summary>按选定数量取走选中行的产品(保留星级)。</summary>
-    private void TakeSelected()
+    /// <summary>取走单个产品(保留星级)。shift=5、ctrl+shift=25 批量(与购买一致)。
+    /// arg 格式 "物品ID|星级"(分页后按钮直接传 id|quality)。</summary>
+    private void TakeOne(string arg)
     {
         if (!GuardHostOnly()) return;
         var state = State;
         if (state == null) return;
-        var stacks = GetAggregatedStacks();
-        if (_selectedRow < 0 || _selectedRow >= stacks.Count) return;
-        var (id, quality, total) = stacks[_selectedRow];
-        int want = Math.Clamp(_takeCount, 1, total);
-        string key = AutoGrabberInterceptor.ProduceKey(id, quality);
+        var parts = arg.Split('|');
+        string id = parts[0];
+        int quality = parts.Length > 1 && int.TryParse(parts[1], out int q) ? q : 0;
+        // 取总数(跨房间聚合)
+        int total = 0;
+        if (state != null)
+            foreach (var roomState in state.Rooms.Values)
+                if (roomState.ProduceStacks.TryGetValue(AutoGrabberInterceptor.ProduceKey(id, quality), out int n))
+                    total += n;
+        if (total <= 0) return;
 
-        var item = ItemRegistry.Create(id, want);
+        // 批量数量(与购买同款:shift=5, ctrl+shift=25)
+        int qty = 1;
+        if (Game1.oldKBState.IsKeyDown(Keys.LeftShift) || Game1.oldKBState.IsKeyDown(Keys.RightShift))
+            qty = 5;
+        if (Game1.oldKBState.IsKeyDown(Keys.LeftControl) || Game1.oldKBState.IsKeyDown(Keys.RightControl))
+            qty = 25;
+        qty = Math.Min(qty, total);
+
+        string key = AutoGrabberInterceptor.ProduceKey(id, quality);
+        var item = ItemRegistry.Create(id, qty);
         item.Quality = quality;
         Game1.player.addItemByMenuIfNecessary(item);
         int leftover = item.Stack;
-        int actuallyTook = want - leftover;
+        int actuallyTook = qty - leftover;
         if (actuallyTook <= 0)
         {
             Notice("背包已满,无法取出", error: true);
@@ -732,8 +646,10 @@ public class HubMenu : IClickableMenu
         Game1.playSound("coin");
         RefreshSnapshotCounts();
         RebuildButtons();
-        Notice($"已取走 {actuallyTook} 个{QualityLabel(quality).Name}{id}");
-        _selectedRow = -1;
+        // 显示正常物品名(不显示 (O)xxx 代码)
+        string prodName = ItemRegistry.Create(id).DisplayName;
+        string star = QualityLabel(quality).Name;
+        Notice($"已取走 {actuallyTook} 个{star}{prodName}");
     }
 
     /// <summary>联机守卫:只有主机能改养殖场状态(状态存 Building.ModData,由主机单向同步到客机;
@@ -891,11 +807,11 @@ public class HubMenu : IClickableMenu
                 Id = id,
                 Room = animalType,          // 记动物类型(绵羊产物=羊毛,与山羊区分)
                 TypeKey = info.TypeKey,
-                AgeDays = info.MatureDays,   // 买成年动物(原版玛妮卖成年):成年才产蛋耗草,幼崽不产
+                AgeDays = info.MatureDays,           // 买成年动物(原版玛妮卖成年):成年才产蛋耗草,幼崽不产
                 Friendship = 0,
                 Happiness = 255,
                 Fullness = 255,
-                DaysSinceProduce = 0,
+                DaysSinceProduce = info.DaysToProduce,   // 买来即可产:满足阈值,当晚结算就产(原版玛妮卖的是能产的)
                 ProduceCount = 0,
                 OwnerId = farmer.UniqueMultiplayerID,
             });

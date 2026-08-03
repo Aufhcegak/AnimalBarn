@@ -21,6 +21,19 @@ public static class RoomAnimalRenderer
         if (building == null || barn == null) return;
         var roomState = barn.GetOrCreate(building).GetRoom(houseRoom);
         SyncEntities(ah, houseRoom, roomState);
+        // 进门即归位:把已存在的实体(含上一轮残留位置的)全部拉回动物区,杜绝过道刷动物。
+        RepositionAnimalsToPens(ah);
+        // ⚠️ 补设 currentLocation + homeInterior:旧存档动物是旧代码生成的(都没设),
+        // 游戏判定"在外面"→ F1 显示"被关在外面"+心情减半。每次进房间补设 → 游戏认为动物在屋里。
+        // 同时把心情拉到高位(自动抚摸机:动物在屋里被照顾,心情好)。
+        foreach (var animal in ah.animals.Values)
+        {
+            animal.currentLocation = ah;
+            animal.homeInterior = ah;   // IsHome=true → 不判"被关在外面"
+            animal.wasAutoPet.Value = true;
+            if (animal.happiness.Value < 200)
+                animal.happiness.Value = 200;
+        }
     }
 
     /// <summary>按建筑 + 房间同步(购买后调用):找到该建筑的该房间(若已创建)并补齐可见实体。
@@ -65,10 +78,13 @@ public static class RoomAnimalRenderer
             animal.happiness.Value = (byte)Math.Clamp(rec.Happiness, 0, 255);
             animal.daysSinceLastLay.Value = rec.DaysSinceProduce;
             animal.wasAutoPet.Value = true;   // 自动护理:防止"没摸过"的好感/心情衰减
+            // 买来即可产:成年动物把 daysSinceLastLay 设到阈值(原版玛妮卖的是能产的)
+            if (rec.IsAdult && rec.DaysSinceProduce >= FarmAnimalCatalog.Get(rec.Room).DaysToProduce)
+                animal.daysSinceLastLay.Value = Math.Max(1, FarmAnimalCatalog.Get(rec.Room).DaysToProduce);
 
-            // 随机站位:优先用原生 setRandomPosition(反编译确认存在, AnimalHouse 是 GameLocation),
-            // 兜底手动挑活动区格(若原生把动物放墙里)。
-            try { animal.setRandomPosition(home); } catch { animal.Position = FindOpenPosition(home); }
+            // 站位:强制放在【动物区】(左右栅栏和墙之间),绝不在中央走道(人走)。
+            // 不依赖 setRandomPosition(可能把动物放走道/门口),直接用 FindOpenPosition 钉在动物区。
+            animal.Position = FindOpenPosition(home);
 
             // home/reload 需要 Building(反编译确认 FarmAnimal.home 是 Building,不是 AnimalHouse):
             // 用房间挂的父建筑作为 home,动物才不会"无家可归"报错。无法确定父建筑则跳过 home(仅展示)。
@@ -77,6 +93,16 @@ public static class RoomAnimalRenderer
                 animal.home = parent;
                 animal.reload(parent);
             }
+
+            // ⚠️ 关键:设 currentLocation = 房间(AnimalHouse)。否则游戏判定动物"在外面"
+            // (currentLocation 不是室内) → F1 显示"被关在外面过夜很生气"!
+            animal.currentLocation = home;
+
+            // ⚠️ 关键2:设 homeInterior = 房间。原版 IsHome = homeInterior.animals.ContainsKey(myID)
+            // → homeInterior 指向房间后 IsHome=true → 结算不判"被关在外面"(moodMessage=6 + 心情减半)!
+            // (源码 FarmAnimal.cs: homeInterior 是 netHomeInterior.Value 可设)
+            animal.homeInterior = home;
+
             return animal;
         }
         catch (System.Exception ex)
@@ -87,22 +113,39 @@ public static class RoomAnimalRenderer
         }
     }
 
-    /// <summary>在房间活动区里随机挑一个可通行格(像素坐标)。优先动物区(中央走道两侧大片区域,
-    /// x 避开中央走道列),兜底北入口下方中央走道(进房间的地方)。</summary>
+    /// <summary>把房间里所有实体动物拉回动物区(左右栅栏和墙之间,不在中央走道)。
+    /// 原生 FarmAnimal 每天会随机走动,可能逛到走道 → 每天结算时归位。</summary>
+    public static void RepositionAnimalsToPens(AnimalHouse ah)
+    {
+        foreach (var animal in ah.animals.Values)
+        {
+            var tile = animal.TilePoint;   // Character.TilePoint:当前格
+            // 是否在中央走道区(过道 x=6..8) → 拉回动物区
+            if (tile.X >= 6 && tile.X <= 8)
+            {
+                animal.Position = FindOpenPosition(ah);
+            }
+        }
+    }
+
+    /// <summary>在房间【动物区】里随机挑一个可通行格(像素坐标)。动物区 = 左右栅栏和墙之间
+    /// (左 x=1..4 / 右 x=10..13,y=4..8),绝不在中央走道(x=6..8,人走)里生成。
+    /// 兜底固定放动物区内 (3,6),保证动物一定在栅栏里。</summary>
     private static Vector2 FindOpenPosition(AnimalHouse ah)
     {
         var buildings = ah.map?.GetLayer("Buildings");
-        int xMid = RoomMapBuilder.DoorX;
         for (int tries = 0; tries < 12; tries++)
         {
             int x = Game1.random.Next(2) == 0
-                ? Game1.random.Next(1, xMid - 1)     // 左动物区 x=1..xMid-2
-                : Game1.random.Next(xMid + 2, RoomMapBuilder.Width - 1);  // 右动物区 x=xMid+2..13
-            int y = Game1.random.Next(4, RoomMapBuilder.Height - 2);
+                ? Game1.random.Next(1, 5)                    // 左动物区 x=1..4
+                : Game1.random.Next(10, 14);                 // 右动物区 x=10..13
+            int y = Game1.random.Next(4, 9);
+            // 双重保险:避开中央走道 3 列(x=6..8) 且 无 Buildings 阻挡
+            if (x >= 6 && x <= 8) continue;
             if (buildings == null || buildings.Tiles[x, y] == null)
                 return new Vector2(x * 64f, y * 64f);
         }
-        // 兜底:北入口下方中央走道 (DoorX, 4)
-        return new Vector2(xMid * 64f, 4 * 64f);
+        // 兜底:左动物区中间 (3,6),一定在栅栏里
+        return new Vector2(3 * 64f, 6 * 64f);
     }
 }
