@@ -250,11 +250,15 @@ public static class MultiplayerSync
         var building = _barn.FindBuildingById(guid);
         if (building == null) return;
 
-        // 找大堂(房间回程目标)
+        // 找大堂(房间回程目标)。⚠️ 用建筑 id 匹配,不用 ParentBuilding 引用比较
+        // (联机/多端下引用可能不一致,匹配失败则房间出口 warp 保持默认 Farm 0 0 =
+        // 出房间回农场左上角 —— 用户实测根因)。
         GameLocation? lobby = null;
+        var buildingId = building.id.Value;
         foreach (var loc in Game1.locations)
         {
-            if (AnimalBarnLocations.IsLobby(loc) && loc.ParentBuilding == building)
+            if (AnimalBarnLocations.IsLobby(loc) && loc.ParentBuilding != null
+                && loc.ParentBuilding.id.Value == buildingId)
             {
                 lobby = loc;
                 break;
