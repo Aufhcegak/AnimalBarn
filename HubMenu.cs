@@ -644,6 +644,8 @@ public class HubMenu : IClickableMenu
         }
         TakeFromRooms(key, actuallyTook);
         Game1.playSound("coin");
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.TakeProduce, _building, $"{id}|{quality}", actuallyTook);
         RefreshSnapshotCounts();
         RebuildButtons();
         // 显示正常物品名(不显示 (O)xxx 代码)
@@ -652,13 +654,13 @@ public class HubMenu : IClickableMenu
         Notice($"已取走 {actuallyTook} 个{star}{prodName}");
     }
 
-    /// <summary>联机守卫:只有主机能改养殖场状态(状态存 Building.ModData,由主机单向同步到客机;
-    /// 客机直接改会被主机覆盖 → 花钱/花料但动物/产物消失 = desync)。所有写操作统一走这里。</summary>
+    /// <summary>联机守卫:主机直接改;访客扣钱后把操作转发给主机执行(主机改状态 + modData 落盘同步)。
+    /// 返回 false = 操作被拒绝(访客也应停)。</summary>
     private bool GuardHostOnly()
     {
-        if (EdgePolish.CanModifyState()) return true;
-        Notice("联机下只有主机能操作养殖场", error: true);
-        return false;
+        if (Game1.IsMasterGame) return true;
+        // 访客:允许继续(扣钱/取货发生在本地),但状态变更由 MultiplayerSync.ForwardWrite 转主机
+        return true;
     }
 
     /// <summary>数背包里某物品总数(木/石)。</summary>
@@ -711,6 +713,8 @@ public class HubMenu : IClickableMenu
         ConsumeFromInventory(farmer, "(O)390", next.Stone);
         state.OverallLevel++;
         Game1.playSound("reward");
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.UpgradeOverall, _building, "", 0);
 
         // 完整刷新(整体等级/房间解锁/房间等级),UI 立即显示新等级 —— 修复「升级后仍显示旧等级」。
         RefreshSnapshotCounts();
@@ -742,6 +746,8 @@ public class HubMenu : IClickableMenu
         if (next.Stone > 0) ConsumeFromInventory(farmer, "(O)390", next.Stone);
         roomState.UpgradeLevel++;
         Game1.playSound("reward");
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.UpgradeRoom, _building, houseRoom.ToString(), 0);
         RefreshSnapshotCounts();
         RebuildButtons();
         Notice($"「{displayName}」升级到 {roomState.UpgradeLevel} 级,容量 {UpgradeSystem.CapacityAt(houseRoom, roomState.UpgradeLevel)}");
@@ -817,6 +823,8 @@ public class HubMenu : IClickableMenu
             });
         }
         ledger.SaveTo(roomState);
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.BuyAnimal, _building, animalType.ToString(), qty);
 
         // 立即在房间里生成可见实体(前 30 只),玩家进门就能看到动物,不用等第二天结算。
         if (_building != null)
@@ -844,6 +852,8 @@ public class HubMenu : IClickableMenu
             return;
         }
         Game1.playSound("coin");
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.BuyHay, _building, "", actual);
         _snapshot.HayStock = state.HayStock;
         Notice($"已购入 {actual} 份干草({actual * HaySystem.DiscountPrice}g)");
     }
@@ -882,6 +892,8 @@ public class HubMenu : IClickableMenu
             return;
         }
         Game1.playSound("coin");
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.TakeAll, _building, "", 0);
         RefreshSnapshotCounts();
         RebuildButtons();
         Notice($"已取走 {totalTook} 件产品");
