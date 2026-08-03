@@ -646,11 +646,26 @@ public class HubMenu : IClickableMenu
             Notice("背包已满,无法取出", error: true);
             return;
         }
+
+        // ⚠️ 联机修复:访客【不扣本地副本】(本地副本是 modData 临时反序列化,扣了会被
+        // 主机 NetField 同步覆盖;且与主机真实扣减双写 → "背包多蛋仓库没减"卡蛋窗口)。
+        // 访客只转发主机扣真实状态;主机扣完 NetField 同步回来访客看到的就是正确值。
+        if (!Game1.IsMasterGame)
+        {
+            if (_building != null)
+                MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.TakeProduce, _building, $"{id}|{quality}", actuallyTook);
+            Game1.playSound("coin");
+            RefreshSnapshotCounts();
+            RebuildButtons();
+            string prodNameG = ItemRegistry.Create(id).DisplayName;
+            string starG = QualityLabel(quality).Name;
+            Notice($"已取走 {actuallyTook} 个{starG}{prodNameG}");
+            return;
+        }
+
         TakeFromRooms(key, actuallyTook);
         Game1.playSound("coin");
-        if (!Game1.IsMasterGame && _building != null)
-            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.TakeProduce, _building, $"{id}|{quality}", actuallyTook);
-        else if (_building != null)
+        if (_building != null)
             MultiplayerSync.CommitState(_building);   // 联机:主机取货后立即落盘
         RefreshSnapshotCounts();
         RebuildButtons();
@@ -896,7 +911,9 @@ public class HubMenu : IClickableMenu
             int leftover = item.Stack;  // 没塞进去的剩余量
             int took = count - leftover;
             if (took <= 0) continue;
-            TakeFromRooms(key, took);
+            // ⚠️ 联机:访客不扣本地副本(只转发主机扣真实;双写 = 卡蛋窗口)
+            if (Game1.IsMasterGame)
+                TakeFromRooms(key, took);
             totalTook += took;
         }
 
