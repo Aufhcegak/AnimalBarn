@@ -9,14 +9,22 @@ public class BarnManager
     public const string BuildingId = "xiepe.AnimalBarn";
 
     // 键用 Building.id(NetGuid):这是 1.6 建筑的身份字段(存档持久、实例唯一),本版本没有 long 型 uid。
-    private readonly Dictionary<Guid, BarnSaveData> _states = new();  // building.id -> state
+    private readonly Dictionary<Guid, BarnSaveData> _states = new();  // building.id -> state(仅主机缓存)
 
     /// <summary>获取(或惰性创建)建筑的状态。
-    /// 联机:每次直接从 building.modData 读取(NetField 主机→访客实时同步),
-    /// 不在本端长期缓存——访客打开菜单时看到的一定是主机最新状态。</summary>
+    /// 联机关键(源码实锤:Building.modData 是 NetField,主机写→自动同步访客):
+    /// - 主机:缓存 + 每次变更后 CommitState 立即写 modData(NetField 推给访客)。
+    /// - 访客:【不缓存】,每次直接从 modData 读 —— 读到的一定是主机最新同步值。
+    /// 这就是"访客看到的中枢状态与房主不同步"的根因:原实现访客第一次读空缓存后永远用旧缓存。</summary>
     public BarnSaveData GetOrCreate(Building building)
     {
+        if (building == null) return new BarnSaveData();
         var id = building.id.Value;
+
+        // 访客:不缓存,直接读 modData(NetField 已同步主机最新值)
+        if (!Game1.IsMasterGame)
+            return SaveSerializer.Load(building) ?? new BarnSaveData();
+
         if (_states.TryGetValue(id, out var cached))
             return cached;
         var state = SaveSerializer.Load(building) ?? new BarnSaveData();
@@ -36,15 +44,6 @@ public class BarnManager
 
     /// <summary>清空缓存(读档后调用,让状态重新从 modData 加载)。</summary>
     public void ClearCache() => _states.Clear();
-
-    /// <summary>访客端:应用主机广播的最新状态(覆盖本地缓存)。
-    /// 联机同步:主机状态通过 Building.ModData(NetField)同步,但只在 Saving 落盘;
-    /// 访客打开菜单时请求最新快照,这里写进缓存供读取。不写 modData(访客不落盘)。</summary>
-    public void ImportState(Building building, BarnSaveData state)
-    {
-        if (building == null || state == null) return;
-        _states[building.id.Value] = state;
-    }
 
     /// <summary>按 Guid 查找养殖场建筑(公开:联机同步层用)。</summary>
     public Building? FindBuildingById(Guid id)
