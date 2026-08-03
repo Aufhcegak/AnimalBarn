@@ -1,4 +1,5 @@
 using StardewValley;
+using StardewValley.Buildings;
 
 namespace AnimalBarn;
 
@@ -71,6 +72,10 @@ public static class SettlementService
 
         // 5. 台账写回
         ledger.SaveTo(roomState);
+
+        // 联机:结算后立即落盘 modData(NetField 同步访客,仓库/中枢立刻可见)
+        if (building != null)
+            MultiplayerSync.CommitState(building);
     }
 
     /// <summary>当前房间的实体动物 id 集合(结算时传给台账,跳过这批动物)。</summary>
@@ -85,8 +90,9 @@ public static class SettlementService
     /// <summary>【建筑级结算】:某建筑所有房间的台账每日结算(不管房间地图创建没)。
     /// ⚠️ 只有已创建的房间才有实体动物(原生 DayUpdate 已结算它们 → 台账跳过)。
     /// 未创建房间 = 纯台账 → 全部结算。这是"买 100 只鸡只有 3 个蛋"的修复:
-    /// 此前只结算已创建房间,没进门的房间台账永远不产。</summary>
-    public static void SettleAllRooms(BarnSaveData state)
+    /// 此前只结算已创建房间,没进门的房间台账永远不产。
+    /// 结算后立即落盘 modData(联机:NetField 同步访客,仓库/中枢立刻可见)。</summary>
+    public static void SettleAllRooms(BarnSaveData state, Building? building)
     {
         foreach (var (roomKey, roomState) in state.Rooms.ToList())
         {
@@ -108,6 +114,10 @@ public static class SettlementService
 
             ledger.SaveTo(roomState);
         }
+
+        // 联机:结算后立即把状态落盘 modData(NetField 同步给访客,仓库/中枢立刻可见)
+        if (building != null)
+            MultiplayerSync.CommitState(building);
     }
 
     /// <summary>把实体动物的最终值(结算后)同步回台账记录;实体不在台账(如直接购买)则加入。
