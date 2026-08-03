@@ -114,6 +114,10 @@ public class HubMenu : IClickableMenu
     {
         base.receiveLeftClick(x, y, playSound); // 处理右上角关闭按钮
 
+        // 联机:每次点击前重读状态(访客 modData 已 NetField 同步主机最新值)
+        if (!Game1.IsMasterGame && _barn != null && _building != null)
+            RefreshSnapshotCounts();
+
         for (int i = 0; i < _tabRects.Count; i++)
         {
             if (_tabRects[i].Contains(x, y))
@@ -646,6 +650,8 @@ public class HubMenu : IClickableMenu
         Game1.playSound("coin");
         if (!Game1.IsMasterGame && _building != null)
             MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.TakeProduce, _building, $"{id}|{quality}", actuallyTook);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机取货后立即落盘
         RefreshSnapshotCounts();
         RebuildButtons();
         // 显示正常物品名(不显示 (O)xxx 代码)
@@ -715,6 +721,8 @@ public class HubMenu : IClickableMenu
         Game1.playSound("reward");
         if (!Game1.IsMasterGame && _building != null)
             MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.UpgradeOverall, _building, "", 0);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机操作后立即落盘 modData(NetField 同步访客)
 
         // 完整刷新(整体等级/房间解锁/房间等级),UI 立即显示新等级 —— 修复「升级后仍显示旧等级」。
         RefreshSnapshotCounts();
@@ -748,6 +756,8 @@ public class HubMenu : IClickableMenu
         Game1.playSound("reward");
         if (!Game1.IsMasterGame && _building != null)
             MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.UpgradeRoom, _building, houseRoom.ToString(), 0);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机操作后立即落盘
         RefreshSnapshotCounts();
         RebuildButtons();
         Notice($"「{displayName}」升级到 {roomState.UpgradeLevel} 级,容量 {UpgradeSystem.CapacityAt(houseRoom, roomState.UpgradeLevel)}");
@@ -825,6 +835,8 @@ public class HubMenu : IClickableMenu
         ledger.SaveTo(roomState);
         if (!Game1.IsMasterGame && _building != null)
             MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.BuyAnimal, _building, animalType.ToString(), qty);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机买动物后立即落盘
 
         // 立即在房间里生成可见实体(前 30 只),玩家进门就能看到动物,不用等第二天结算。
         if (_building != null)
@@ -854,6 +866,8 @@ public class HubMenu : IClickableMenu
         Game1.playSound("coin");
         if (!Game1.IsMasterGame && _building != null)
             MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.BuyHay, _building, "", actual);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机买干草后立即落盘
         _snapshot.HayStock = state.HayStock;
         Notice($"已购入 {actual} 份干草({actual * HaySystem.DiscountPrice}g)");
     }
@@ -894,6 +908,8 @@ public class HubMenu : IClickableMenu
         Game1.playSound("coin");
         if (!Game1.IsMasterGame && _building != null)
             MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.TakeAll, _building, "", 0);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机取货后立即落盘(访客仓库立刻变空)
         RefreshSnapshotCounts();
         RebuildButtons();
         Notice($"已取走 {totalTook} 件产品");
