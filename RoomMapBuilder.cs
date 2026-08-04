@@ -20,26 +20,23 @@ public static class RoomMapBuilder
     public const int DoorX = Width / 2;
     public const int DoorY = Height - 1;
 
-    // coopTiles 平铺地板纹理(每房差异化;都是干净平板,铺在 Back 层,动物可站)
-    private const int FloorWood = 12;      // 经典平木板(鸡/兔)
-    private const int FloorLight = 46;     // 浅色平板(鸭/羊)
-    private const int FloorMid = 56;       // 中色平板(鸵鸟/猪)
-    private const int FloorWarm = 54;      // 暖色平板(恐龙/牛)
+    // coopTiles 平铺地板纹理(用户要求:所有房间地板与大厅统一,用经典木地板 12)
+    private const int FloorWood = 12;      // 经典平木板(所有房间统一)
 
     // coopTiles 平铺干草堆(Back 层装饰,无框、平贴地面,营造畜棚氛围;不挡路,动物可踩)
     private static readonly int[] HayScatter = { 13, 14, 15, 17, 18, 21, 22 };
 
-    // 每房主题:地板 + 干草种子(让同类房间每次生成一致)
+    // 每房主题:地板(统一木地板)+ 干草种子(让同类房间每次生成一致)
     private static (int floor, int seed) Theme(RoomType room) => room switch
     {
         RoomType.Chicken => (FloorWood, 101),
-        RoomType.Duck => (FloorLight, 102),
+        RoomType.Duck => (FloorWood, 102),
         RoomType.Rabbit => (FloorWood, 103),
-        RoomType.Dinosaur => (FloorWarm, 104),
-        RoomType.Ostrich => (FloorMid, 105),
-        RoomType.Pig => (FloorMid, 106),
-        RoomType.Goat => (FloorLight, 107),
-        RoomType.Cow => (FloorWarm, 108),
+        RoomType.Dinosaur => (FloorWood, 104),
+        RoomType.Ostrich => (FloorWood, 105),
+        RoomType.Pig => (FloorWood, 106),
+        RoomType.Goat => (FloorWood, 107),
+        RoomType.Cow => (FloorWood, 108),
         _ => (FloorWood, 100),
     };
 

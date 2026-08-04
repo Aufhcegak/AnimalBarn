@@ -25,4 +25,15 @@ public static class SaveSerializer
     {
         building.modData[Key] = JsonSerializer.Serialize(data, Options);
     }
+
+    /// <summary>序列化状态为 JSON(联机快照传输用,不落盘)。</summary>
+    public static string Serialize(BarnSaveData data)
+        => JsonSerializer.Serialize(data, Options);
+
+    /// <summary>反序列化 JSON(联机快照接收用)。损坏给 null。</summary>
+    public static BarnSaveData? Deserialize(string json)
+    {
+        try { return JsonSerializer.Deserialize<BarnSaveData>(json, Options); }
+        catch { return null; }
+    }
 }

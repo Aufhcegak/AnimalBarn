@@ -109,10 +109,81 @@ public class HubMenu : IClickableMenu
     /// <summary>当前状态(外部读取用)。</summary>
     public BarnSaveData? State => _barn != null && _building != null ? _barn.GetOrCreate(_building) : null;
 
+    /// <summary>把物品放进背包,返回实际放入数量(0 = 一个都没放进去)。
+    /// ⚠️ 不用 addItemByMenuIfNecessary:它会在背包满时打开溢出菜单(物品先进菜单,
+    /// 玩家稍后能拿出来) —— 此时我们还没扣仓库,玩家拿到物品 + 仓库没减 = 重复收取刷蛋(房主访客同)。
+    /// 实际放入量 = 数背包前后差(同 ID+同质量堆叠;canStackWith 源码实锤:同类型/同 ID/同质量才合并)。
+    /// ⚠️ 不能靠 item.Stack 差值:原版 addItemToInventory 放进【空格】时返回的 item.Stack 不减
+    /// (Farmer.cs:4318 `Items[i] = item; num = 0` → 返回 null,Stack 保持原值)——背包里没有同类物品
+    /// (最常见:第一次取货) → Stack 差值 = 0 → 误判"背包已满"且仓库少扣、背包白得物品!
+    /// 数背包前后差对"纯合并/合并+放空格/纯空格/放不下"全部精确(放入多少扣多少,绝不超扣/漏扣)。</summary>
+    internal static int AddToInventoryCounted(Item item)
+    {
+        if (item == null) return 0;
+        int before = CountInInventory(Game1.player, item);
+        Game1.player.addItemToInventoryBool(item);
+        return CountInInventory(Game1.player, item) - before;
+    }
+
+    /// <summary>数背包里与 item 同 ID+同质量(原版 canStackWith 语义)的物品总数。
+    /// 注意:同 ID 不同质量(普通/银/金/铱)在背包里是独立堆叠,必须按质量分开数。</summary>
+    internal static int CountInInventory(Farmer f, Item item)
+    {
+        int n = 0;
+        foreach (var i in f.Items)
+            if (i != null && i.QualifiedItemId == item.QualifiedItemId && i.Quality == item.Quality)
+                n += i.Stack;
+        return n;
+    }
+
+    /// <summary>联机防重复取货(访客):取货转发主机后,NetField 同步前,禁止再次取同一物品。
+    /// key = "物品ID|星级" → 已请求扣减量。同步后(库存减少)自动解除。</summary>
+    private static readonly System.Collections.Generic.Dictionary<string, int> PendingGuestTakes = new();
+
+    /// <summary>访客取货防重复检查:若该物品还有未确认的取货,拒绝再次取(防 NetField 延迟窗口刷蛋)。</summary>
+    private static bool GuestTakeBlocked(string id, int quality)
+    {
+        string key = AutoGrabberInterceptor.ProduceKey(id, quality);
+        if (PendingGuestTakes.TryGetValue(key, out int pending) && pending > 0)
+            return true;
+        return false;
+    }
+
+    /// <summary>访客取货后登记(等待主机同步)。</summary>
+    private static void GuestTakeMark(string id, int quality, int qty)
+    {
+        string key = AutoGrabberInterceptor.ProduceKey(id, quality);
+        PendingGuestTakes[key] = PendingGuestTakes.GetValueOrDefault(key) + qty;
+    }
+
+    /// <summary>同步解除:每次重读状态时,若该物品当前库存 < 已登记待确认量,说明主机已扣,解除防重复。
+    /// 防御:即使 NetField 延迟,最多等一次重读就解除。</summary>
+    private void GuestTakeResolve(BarnSaveData state)
+    {
+        if (PendingGuestTakes.Count == 0) return;
+        foreach (var pair in PendingGuestTakes.ToList())
+        {
+            var parts = pair.Key.Split('|');
+            string id = parts[0];
+            int quality = parts.Length > 1 && int.TryParse(parts[1], out int q) ? q : 0;
+            int current = 0;
+            foreach (var roomState in state.Rooms.Values)
+                if (roomState.ProduceStacks.TryGetValue(AutoGrabberInterceptor.ProduceKey(id, quality), out int n))
+                    current += n;
+            // 库存已减(主机扣减已同步)→ 解除防重复
+            if (current < pair.Value)
+                PendingGuestTakes.Remove(pair.Key);
+        }
+    }
+
     /// <summary>点击处理:页签切换 / 内容按钮 / 关闭按钮。</summary>
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
         base.receiveLeftClick(x, y, playSound); // 处理右上角关闭按钮
+
+        // 联机:每次点击前重读状态(访客 modData 已 NetField 同步主机最新值)
+        if (!Game1.IsMasterGame && _barn != null && _building != null)
+            RefreshSnapshotCounts();
 
         for (int i = 0; i < _tabRects.Count; i++)
         {
@@ -606,7 +677,9 @@ public class HubMenu : IClickableMenu
     }
 
     /// <summary>取走单个产品(保留星级)。shift=5、ctrl+shift=25 批量(与购买一致)。
-    /// arg 格式 "物品ID|星级"(分页后按钮直接传 id|quality)。</summary>
+    /// arg 格式 "物品ID|星级"(分页后按钮直接传 id|quality)。
+    /// ⚠️ 防刷蛋核心:放入背包多少才扣仓库多少(addItemToInventoryBool 原子性,
+    /// 绝不先给物品后扣库 —— 那会因背包满/溢出菜单造成重复收取,房主访客同)。</summary>
     private void TakeOne(string arg)
     {
         if (!GuardHostOnly()) return;
@@ -623,6 +696,13 @@ public class HubMenu : IClickableMenu
                     total += n;
         if (total <= 0) return;
 
+        // 访客防重复:上次取货未确认(NetField 未同步)前,禁止再次取同一物品
+        if (!Game1.IsMasterGame && GuestTakeBlocked(id, quality))
+        {
+            Notice("正在同步上次取货,请稍候…", error: true);
+            return;
+        }
+
         // 批量数量(与购买同款:shift=5, ctrl+shift=25)
         int qty = 1;
         if (Game1.oldKBState.IsKeyDown(Keys.LeftShift) || Game1.oldKBState.IsKeyDown(Keys.RightShift))
@@ -634,16 +714,33 @@ public class HubMenu : IClickableMenu
         string key = AutoGrabberInterceptor.ProduceKey(id, quality);
         var item = ItemRegistry.Create(id, qty);
         item.Quality = quality;
-        Game1.player.addItemByMenuIfNecessary(item);
-        int leftover = item.Stack;
-        int actuallyTook = qty - leftover;
+        // 放入背包(原子:放多少算多少,放不进去就不扣)
+        int actuallyTook = AddToInventoryCounted(item);
         if (actuallyTook <= 0)
         {
             Notice("背包已满,无法取出", error: true);
             return;
         }
+
+        // 放入多少扣多少(少多少收多少,绝不超扣)
+        if (!Game1.IsMasterGame)
+        {
+            if (_building != null)
+                MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.TakeProduce, _building, $"{id}|{quality}", actuallyTook);
+            GuestTakeMark(id, quality, actuallyTook);   // 防重复:等待主机同步
+            Game1.playSound("coin");
+            RefreshSnapshotCounts();
+            RebuildButtons();
+            string prodNameG = ItemRegistry.Create(id).DisplayName;
+            string starG = QualityLabel(quality).Name;
+            Notice($"已取走 {actuallyTook} 个{starG}{prodNameG}");
+            return;
+        }
+
         TakeFromRooms(key, actuallyTook);
         Game1.playSound("coin");
+        if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机取货后立即落盘
         RefreshSnapshotCounts();
         RebuildButtons();
         // 显示正常物品名(不显示 (O)xxx 代码)
@@ -652,13 +749,13 @@ public class HubMenu : IClickableMenu
         Notice($"已取走 {actuallyTook} 个{star}{prodName}");
     }
 
-    /// <summary>联机守卫:只有主机能改养殖场状态(状态存 Building.ModData,由主机单向同步到客机;
-    /// 客机直接改会被主机覆盖 → 花钱/花料但动物/产物消失 = desync)。所有写操作统一走这里。</summary>
+    /// <summary>联机守卫:主机直接改;访客扣钱后把操作转发给主机执行(主机改状态 + modData 落盘同步)。
+    /// 返回 false = 操作被拒绝(访客也应停)。</summary>
     private bool GuardHostOnly()
     {
-        if (EdgePolish.CanModifyState()) return true;
-        Notice("联机下只有主机能操作养殖场", error: true);
-        return false;
+        if (Game1.IsMasterGame) return true;
+        // 访客:允许继续(扣钱/取货发生在本地),但状态变更由 MultiplayerSync.ForwardWrite 转主机
+        return true;
     }
 
     /// <summary>数背包里某物品总数(木/石)。</summary>
@@ -711,6 +808,10 @@ public class HubMenu : IClickableMenu
         ConsumeFromInventory(farmer, "(O)390", next.Stone);
         state.OverallLevel++;
         Game1.playSound("reward");
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.UpgradeOverall, _building, "", 0);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机操作后立即落盘 modData(NetField 同步访客)
 
         // 完整刷新(整体等级/房间解锁/房间等级),UI 立即显示新等级 —— 修复「升级后仍显示旧等级」。
         RefreshSnapshotCounts();
@@ -742,6 +843,10 @@ public class HubMenu : IClickableMenu
         if (next.Stone > 0) ConsumeFromInventory(farmer, "(O)390", next.Stone);
         roomState.UpgradeLevel++;
         Game1.playSound("reward");
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.UpgradeRoom, _building, houseRoom.ToString(), 0);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机操作后立即落盘
         RefreshSnapshotCounts();
         RebuildButtons();
         Notice($"「{displayName}」升级到 {roomState.UpgradeLevel} 级,容量 {UpgradeSystem.CapacityAt(houseRoom, roomState.UpgradeLevel)}");
@@ -817,6 +922,10 @@ public class HubMenu : IClickableMenu
             });
         }
         ledger.SaveTo(roomState);
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.BuyAnimal, _building, animalType.ToString(), qty);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机买动物后立即落盘
 
         // 立即在房间里生成可见实体(前 30 只),玩家进门就能看到动物,不用等第二天结算。
         if (_building != null)
@@ -844,6 +953,10 @@ public class HubMenu : IClickableMenu
             return;
         }
         Game1.playSound("coin");
+        if (!Game1.IsMasterGame && _building != null)
+            MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.BuyHay, _building, "", actual);
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机买干草后立即落盘
         _snapshot.HayStock = state.HayStock;
         Notice($"已购入 {actual} 份干草({actual * HaySystem.DiscountPrice}g)");
     }
@@ -863,16 +976,18 @@ public class HubMenu : IClickableMenu
         }
 
         int totalTook = 0;
+        var tookItems = new System.Collections.Generic.List<(string id, int quality, int qty)>();
         foreach (var (id, quality, count) in stacks)
         {
             string key = AutoGrabberInterceptor.ProduceKey(id, quality);
             var item = ItemRegistry.Create(id, count);
             item.Quality = quality;
-            Game1.player.addItemByMenuIfNecessary(item);
-            int leftover = item.Stack;  // 没塞进去的剩余量
-            int took = count - leftover;
+            // 放入背包(原子:放多少算多少,放不进去的不扣 —— 防背包满/溢出菜单刷蛋)
+            int took = AddToInventoryCounted(item);
             if (took <= 0) continue;
-            TakeFromRooms(key, took);
+            if (Game1.IsMasterGame)
+                TakeFromRooms(key, took);
+            tookItems.Add((id, quality, took));
             totalTook += took;
         }
 
@@ -882,6 +997,14 @@ public class HubMenu : IClickableMenu
             return;
         }
         Game1.playSound("coin");
+        if (!Game1.IsMasterGame && _building != null)
+        {
+            // 访客:按实际放入量逐项转发主机扣减(精确到物品+星级,不超扣)
+            foreach (var (id, quality, qty) in tookItems)
+                MultiplayerSync.ForwardWrite(MultiplayerSync.WriteOp.TakeProduce, _building, $"{id}|{quality}", qty);
+        }
+        else if (_building != null)
+            MultiplayerSync.CommitState(_building);   // 联机:主机取货后立即落盘(访客仓库立刻变空)
         RefreshSnapshotCounts();
         RebuildButtons();
         Notice($"已取走 {totalTook} 件产品");

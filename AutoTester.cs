@@ -71,7 +71,7 @@ public static class AutoTester
         // 3. 手动结算(与 DayStarted 同路径:建筑级结算所有房间)
         int hayBefore = state.HayStock;
         if (hayBefore < 10) state.HayStock = 100;   // 保证有草可扣
-        SettlementService.SettleAllRooms(state);
+        SettlementService.SettleAllRooms(state, null);
 
         // 4. 检查结果
         var roomAfter = state.GetRoom(RoomType.Chicken);
@@ -90,6 +90,51 @@ public static class AutoTester
 
         // 5. 仓库页聚合验证(取货路径)
         Results.Add("INFO produce stacks: " + string.Join(", ", roomAfter.ProduceStacks.Select(kv => kv.Key + "=" + kv.Value)));
+
+        // 6. 取货回归验证(2026-08-04 修复:放进背包的"实际放入量"靠数背包前后差,
+        //    不再靠 item.Stack 差值 —— 原版 addItemToInventory 放进空格时 Stack 不减,
+        //    旧算法把"已放进背包"误判成 0 = 误报"背包已满"+ 仓库少扣 + 背包白得物品)。
+        try
+        {
+            var anyStack = roomAfter.ProduceStacks.FirstOrDefault(kv => kv.Value > 0);
+            if (anyStack.Key == null || anyStack.Value <= 0)
+            {
+                Results.Add("INFO take-produce: 仓库无产品,跳过取货验证(先跑结算)");
+            }
+            else
+            {
+                var parts = anyStack.Key.Split('|');
+                string pid = parts[0];
+                int pqual = parts.Length > 1 && int.TryParse(parts[1], out int q) ? q : 0;
+                int takeQty = Math.Min(anyStack.Value, 5);
+
+                int CountInv()   // 数背包里同 ID+同质量总数
+                {
+                    int n = 0;
+                    foreach (var i in Game1.player.Items)
+                        if (i?.QualifiedItemId == pid && i.Quality == pqual) n += i.Stack;
+                    return n;
+                }
+
+                int invBefore = CountInv();
+                var takeItem = ItemRegistry.Create(pid, takeQty);
+                takeItem.Quality = pqual;
+                int took = HubMenu.AddToInventoryCounted(takeItem);   // 真实放入路径(原版 addItemToInventoryBool)
+                int invAfter = CountInv();
+
+                Results.Add($"INFO take-produce: 取 {pid}(q{pqual}) 请求 {takeQty} 返回 {took} 背包 {invBefore}→{invAfter}");
+                Results.Add((took == invAfter - invBefore
+                    ? "PASS " : "FAIL ") + $"take-produce: 返回数=背包实际增量 ({took} == {invAfter - invBefore})");
+                if (took > 0)
+                    Results.Add("PASS take-produce: 背包有空间时成功取出,不再误报背包已满");
+                else
+                    Results.Add("INFO take-produce: 背包满,取 0 个(正常拒绝,不刷蛋)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Results.Add("FAIL take-produce exception: " + ex);
+        }
     }
 
     private static void Finish()

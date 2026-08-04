@@ -177,6 +177,33 @@ public static class IntegrationTest
             // 升级解锁:2 级开养猪场
             state.OverallLevel = 2;
             Check("flow: pig room unlocks at lvl2", UpgradeSystem.IsUnlocked(RoomType.Pig, state.OverallLevel));
+
+            // 9. 取货"实际放入量"回归验证(2026-08-04 修复)。
+            //    真实取货 AddToInventoryCounted 需要 Game1.player(标题画面为 null),这里用
+            //    AddItemSimulator(照抄原版 addItemToInventory 语义)验证修复后的核心算法
+            //    (数背包前后差)在所有放入场景下都精确;旧算法(Stack 差值)在"放空格"时误判 0。
+            //    场景 A:背包无同类物品(第一次取货)→ 物品进空格,实际放入=全量。
+            {
+                var invA = new AddItemSimulator.FakeInventory();
+                var itemA = new AddItemSimulator.FakeItem("(O)176", 0, 5);
+                int oldA = AddItemSimulator.OldAddCounted(invA, itemA);
+                int newA = AddItemSimulator.NewAddCounted(
+                    invA, new AddItemSimulator.FakeItem("(O)176", 0, 5));
+                Check("withdraw: 旧算法空格误判0(实锤bug)", oldA == 0);
+                Check("withdraw: 新算法空格精确5", newA == 5);
+            }
+            // 场景 B:背包满(无同类)→ 一个都放不进,新旧都算 0(不误报)。
+            {
+                var invB = new AddItemSimulator.FakeInventory(2);
+                invB.Slots[0] = new AddItemSimulator.FakeItem("(O)174", 0, 3);
+                invB.Slots[1] = new AddItemSimulator.FakeItem("(O)174", 0, 4);
+                int oldB = AddItemSimulator.OldAddCounted(
+                    invB, new AddItemSimulator.FakeItem("(O)176", 0, 5));
+                int newB = AddItemSimulator.NewAddCounted(
+                    invB, new AddItemSimulator.FakeItem("(O)176", 0, 5));
+                Check("withdraw: 背包满旧算法0", oldB == 0);
+                Check("withdraw: 背包满新算法0", newB == 0);
+            }
         }
         catch (Exception ex)
         {

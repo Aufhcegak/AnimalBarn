@@ -74,25 +74,31 @@ public static class RoomManager
         return loc;
     }
 
-    /// <summary>原版栅栏围圈:中央走道两侧各 1 列原版木栅栏(y=3..9),中间 y=6 放原版栅栏门。
-    /// 视觉 = 原版栅栏+栅栏门(用户要求)。动物被栅栏围在左右动物区。
-    /// ⚠️ gate 默认【开】会放动物出来 → 创建后立即关上门(Fence 是 Object 挡动物,门关着动物出不去)。</summary>
+    /// <summary>原版栅栏围圈:中央走道两侧竖列(x=5,9,y=3..9) + 中间 y=6 栅栏门。
+    /// 动物区顶部(y=2 墙裙)和底部(y=10 底封)已被 Buildings 层墙封死 → 动物唯一出口是
+    /// y=6 的栅栏门!⚠️ gate 默认【开】→ 动物从门溜到走道 = "动物刷中间"根因。
+    /// 必须确认 gate 关闭(用原版 Fence.toggleGate 源码参数)。</summary>
     private static void BuildFences(GameLocation loc)
     {
         int xMid = RoomMapBuilder.DoorX;   // =7
+        // 两侧竖列(y=3..9,中间 y=6 留门位)
         for (int y = 3; y <= 9; y++)
         {
             if (y == 6) continue;   // 栅栏门位
             loc.objects[new Vector2(xMid - 2, y)] = new Fence(new Vector2(xMid - 2, y), Fence.woodFenceId, isGate: false);
             loc.objects[new Vector2(xMid + 2, y)] = new Fence(new Vector2(xMid + 2, y), Fence.woodFenceId, isGate: false);
         }
-        // 原版栅栏门(玩家右键开关),创建后立即关门防动物溜出
+
+        // 原版栅栏门(玩家右键开关)
         var g1 = new Fence(new Vector2(xMid - 2, 6), Fence.gateId, isGate: true);
         var g2 = new Fence(new Vector2(xMid + 2, 6), Fence.gateId, isGate: true);
         loc.objects[new Vector2(xMid - 2, 6)] = g1;
         loc.objects[new Vector2(xMid + 2, 6)] = g2;
-        // 关门:toggleGate(farmer, open, playSound) —— 反射确认存在
-        try { g1.toggleGate(null, false, false); g2.toggleGate(null, false, false); } catch { }
+        // 关门:源码实锤 gatePosition.Value=0 是关门(第379行)、88 是开门。
+        // ⚠️ 不能用 toggleGate —— 它要求 Location 非 null(刚 new 完可能 null → 直接 return 没关门)!
+        // 直接设 gatePosition=0(关)最可靠,动物出不去。
+        g1.gatePosition.Value = 0;
+        g2.gatePosition.Value = 0;
     }
 
     /// <summary>读档后清理缓存(房间由首次进门时重建)。</summary>

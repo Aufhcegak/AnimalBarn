@@ -170,5 +170,75 @@ Check("saveto stacks", rs.ProduceStacks["(O)176"] == 5);
 Check("saveto count", rs.ProduceCount == 7);
 Check("saveto animals", rs.Animals.Count == 1 && rs.Animals[0].Friendship == 300);
 
+// --- 取货"实际放入量"回归测试(原版 addItemToInventory 语义模拟器) ---
+// 背景:2026-08-04 用户实测"进大门第 1 次取东西,弹背包已满 + 扣的给的不对"。
+// 根因:旧算法靠 item.Stack 差值算放入量,但原版放进【空格】时 Stack 不减 → 算成 0。
+// 以下用 AddItemSimulator(照抄 Farmer.cs:4277-4335 + Item.cs:504-523,主工程共享)先复现旧算法错误,
+// 再验证新算法(数背包前后差)在全部场景精确。
+
+// 场景 1【用户实测根因】背包没有同类物品(第 1 次取货)→ 物品进空格:
+//   旧算法误判 0(实际放进了 5 个),新算法精确 5。
+{
+    var inv = new AddItemSimulator.FakeInventory();
+    var item = new AddItemSimulator.FakeItem("(O)176", 0, 5);   // 5 个普通鸡蛋
+    int oldCalc = AddItemSimulator.OldAddCounted(inv, item);
+    Check("REG1 空格场景:旧算法误判0(实锤bug)", oldCalc == 0);
+    Check("REG1 空格场景:新算法精确5", inv.CountOf("(O)176", 0) == 5);
+    int newCalc = AddItemSimulator.NewAddCounted(inv, new AddItemSimulator.FakeItem("(O)176", 0, 5));
+    Check("REG1 新算法(再放5)=5", newCalc == 5);
+}
+
+// 场景 2【部分合并】背包已有 3 个普通蛋(堆叠上限 999)→ 再放 10 个:
+//   合并 3 → 剩余 7 进空格。新算法精确 10;旧算法:合并时 item.Stack 变 7(剩 7 进空格,Stack 不减)→ 算成 3。
+{
+    var inv = new AddItemSimulator.FakeInventory();
+    inv.Slots[0] = new AddItemSimulator.FakeItem("(O)176", 0, 3);
+    var item = new AddItemSimulator.FakeItem("(O)176", 0, 10);
+    inv.AddItem(item);
+    Check("REG2 部分合并:放满10", inv.CountOf("(O)176", 0) == 13);
+    int newCalc = AddItemSimulator.NewAddCounted(inv, new AddItemSimulator.FakeItem("(O)176", 0, 10));
+    Check("REG2 部分合并:新算法精确10", newCalc == 10);
+}
+
+// 场景 3【背包满】全部格子占用(无同类)→ 一个都放不进:
+//   新旧算法都算 0(旧算法不误判,因为 item.Stack 未减 = 差值 0 = 实际放不进)。
+{
+    var inv = new AddItemSimulator.FakeInventory(2);
+    inv.Slots[0] = new AddItemSimulator.FakeItem("(O)174", 0, 3);   // 别的物品占满
+    inv.Slots[1] = new AddItemSimulator.FakeItem("(O)174", 0, 4);
+    int oldCalc = AddItemSimulator.OldAddCounted(inv, new AddItemSimulator.FakeItem("(O)176", 0, 5));
+    int newCalc = AddItemSimulator.NewAddCounted(inv, new AddItemSimulator.FakeItem("(O)176", 0, 5));
+    Check("REG3 背包满:旧算法0", oldCalc == 0);
+    Check("REG3 背包满:新算法0", newCalc == 0);
+}
+
+// 场景 4【同 ID 不同质量独立堆叠】背包已有普通蛋,取银星蛋:
+//   不同质量不合并(原版 canStackWith),银星进空格。新算法按质量分开数 → 精确。
+{
+    var inv = new AddItemSimulator.FakeInventory();
+    inv.Slots[0] = new AddItemSimulator.FakeItem("(O)176", 0, 8);
+    int newCalc = AddItemSimulator.NewAddCounted(inv, new AddItemSimulator.FakeItem("(O)176", 1, 3));
+    Check("REG4 不同质量分开:新算法精确3", newCalc == 3);
+    Check("REG4 不同质量分开:普通8银3", inv.CountOf("(O)176", 0) == 8 && inv.CountOf("(O)176", 1) == 3);
+}
+
+// 场景 5【合并 + 剩余进空格(旧算法错得最离谱)】背包已有 998 个普通蛋(堆叠上限 999)+ 2 个空格,再放 5 个:
+//   合并 1 个(998+1=999,上限) → 剩 4 个进空格(item.Stack 保持 4!)→ 实际放进 5 个。
+//   旧算法:before=5, after(Stack)=4 → 算成 1(只算合并的 1 个,漏算进空格的 4 个)→ 仓库只扣 1、背包白得 4。
+{
+    var inv = new AddItemSimulator.FakeInventory(3);
+    inv.Slots[0] = new AddItemSimulator.FakeItem("(O)176", 0, 998);
+    var item = new AddItemSimulator.FakeItem("(O)176", 0, 5);
+    int oldCalc = AddItemSimulator.OldAddCounted(inv, item);
+    Check("REG5 合并+空格:旧算法误判1(实锤bug)", oldCalc == 1);
+    Check("REG5 合并+空格:实际放进5(背包1003)", inv.CountOf("(O)176", 0) == 1003);   // 999(上限)+ 4(进空格)
+    // 新算法:数背包前后差 → 精确 5
+    inv.Slots[0] = new AddItemSimulator.FakeItem("(O)176", 0, 998);
+    inv.Slots[1] = null;
+    inv.Slots[2] = null;
+    int newCalc = AddItemSimulator.NewAddCounted(inv, new AddItemSimulator.FakeItem("(O)176", 0, 5));
+    Check("REG5 合并+空格:新算法精确5", newCalc == 5);
+}
+
 Console.WriteLine(failures == 0 ? "ALL PASS" : $"{failures} FAILURES");
 return failures == 0 ? 0 : 1;

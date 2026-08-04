@@ -35,23 +35,35 @@ public static class HaySystem
     }
 
     /// <summary>手动取出:从全局库存拿干草进背包。返回取出数量。
-    /// 注意:addItemToInventoryBool 在"只放进去一部分"时也返回 false,但物品已实际入包;
-    /// 因此以 game 掉到 item.Stack 上的剩余量为准,只扣实际放入的数量(防重复凭空造干草)。</summary>
+    /// 实际放入量 = 数背包前后差(干草 (O)178 同 ID 堆叠,数前后精确)。
+    /// ⚠️ 不能靠 item.Stack 差值:原版 addItemToInventory 放进【空格】时返回的 item.Stack 不减
+    /// (Farmer.cs:4318)——背包里没有干草时 Stack 差值 = 0,会误判"背包满"且干草白进背包不扣库存。
+    /// 数背包前后差:纯合并/合并+放空格/纯空格/放不下全部精确(取多少扣多少,绝不凭空造干草)。</summary>
     public static int WithdrawHay(BarnSaveData state, Farmer farmer, int quantity)
     {
         if (quantity <= 0) return 0;
         int take = Math.Min(quantity, state.HayStock);
         if (take <= 0) return 0;
         var item = ItemRegistry.Create("(O)178", take);
-        int handing = item.Stack;  // 可能被 FixStackSize 压到最大堆叠(999)
+        int before = CountHay(farmer);
         farmer.addItemToInventoryBool(item);
-        int actual = handing - item.Stack;  // item.Stack 变为没塞进去的剩余量
+        int actual = CountHay(farmer) - before;
         if (actual > 0)
         {
             state.HayStock -= actual;
             return actual;
         }
         return 0;  // 背包满则失败
+    }
+
+    /// <summary>数背包里干草 (O)178 总数(含各堆叠)。</summary>
+    private static int CountHay(Farmer farmer)
+    {
+        int n = 0;
+        foreach (var i in farmer.Items)
+            if (i?.QualifiedItemId == "(O)178")
+                n += i.Stack;
+        return n;
     }
 
     /// <summary>当前库存。</summary>

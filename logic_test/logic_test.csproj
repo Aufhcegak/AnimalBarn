@@ -12,5 +12,6 @@
     <Compile Include="../UpgradeSystem.cs" />
     <Compile Include="../BarnSaveData.cs" />
     <Compile Include="../RoomDefinitions.cs" />
+    <Compile Include="../AddItemSimulator.cs" />
   </ItemGroup>
 </Project>

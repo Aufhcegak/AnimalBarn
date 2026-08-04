@@ -42,6 +42,8 @@ public static class AutoGrabberInterceptor
         roomState.ProduceStacks[key] = n + o.Stack;
         roomState.ProduceCount += o.Stack;
         if (playSound) l.playSound("coin");
+        // 联机:产物入仓后立即落盘 modData(NetField 同步访客,仓库立刻可见)
+        MultiplayerSync.CommitState(l.ParentBuilding);
         __result = true;
         return false;  // 跳过原版掉地
     }

@@ -130,8 +130,8 @@ public static class RoomAnimalRenderer
 
     /// <summary>在房间【动物区】里随机挑一个可通行格(像素坐标)。动物区 = 左右栅栏和墙之间
     /// (左 x=1..4 / 右 x=10..13,y=4..8),绝不在中央走道(x=6..8,人走)里生成。
-    /// 兜底固定放动物区内 (3,6),保证动物一定在栅栏里。</summary>
-    private static Vector2 FindOpenPosition(AnimalHouse ah)
+    /// 兜底固定放动物区内 (3,6),保证动物一定在栅栏里。公开给 BarnPatches 每天归位用。</summary>
+    public static Vector2 FindOpenPosition(AnimalHouse ah)
     {
         var buildings = ah.map?.GetLayer("Buildings");
         for (int tries = 0; tries < 12; tries++)
