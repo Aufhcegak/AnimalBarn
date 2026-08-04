@@ -3,6 +3,5 @@ obj/
 _buildtmp/
 *.user
 .vs/
-AnimalBarn.dll
 autotest.txt
 autotest_result.txt
