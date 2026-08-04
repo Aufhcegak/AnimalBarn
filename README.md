@@ -25,6 +25,7 @@
 - **升级页**：整体升级（解锁房间）+ 各房间升级（扩容）
 - **商店页**：购买 9 种动物（shift=5 只 / Ctrl+shift=25 只批量）+ 购买干草
 - **仓库页**：按物品+星级分页展示产物（普通/银星/金星/铱星），点击取走（shift 批量）
+- **取货防刷蛋**：放进背包多少才扣仓库多少（背包满时如实拒绝，不多给不少扣）
 
 ### 💾 存档安全
 - 全部使用原版类型（AnimalHouse/Object），不自定义 GameLocation/Object 子类 → 不卡保存、不崩存档
@@ -50,7 +51,7 @@
 # 构建(输出到 Mods/AnimalBarn/AnimalBarn.dll)
 dotnet build -c Release
 
-# 纯逻辑单元测试
+# 纯逻辑单元测试(含取货/放入量回归测试)
 cd logic_test && dotnet run -c Release
 
 # 游戏内自动验证(放 autotest.txt 进游戏,结果写 autotest_bot.txt)
@@ -58,12 +59,19 @@ cd logic_test && dotnet run -c Release
 ilspycmd -p -o src "Stardew Valley.dll"
 ```
 
+## 测试
+
+- `logic_test`：纯逻辑单元测试（台账结算 / 升级解锁 / 取货放入量），`dotnet run` 全绿
+- 取货"实际放入量"回归：`AddItemSimulator`（照抄原版 `addItemToInventory` 语义）验证放入/扣库精确性
+- 集成测试：`Mods/AnimalBarn/autotest.txt` 触发，标题画面自动跑
+
 ## 兼容性
 
 - 星露谷 **1.6.15** / SMAPI **4.5.1**（已验证）
 - 支持中文（简体）
 - 与 LookupAnything 兼容（动物/物品按 F1 可查详情）
-- 联机：仅主机可操作养殖场（客机只读，防 desync）
+- 联机（主机权威）：主机操作实时同步客机；客机取货/购买经主机校验后执行（防刷蛋/防 desync）
+- 客机进房间：由主机创建并同步，不黑屏
 
 ## 仓库结构
 
@@ -72,13 +80,15 @@ Mods/AnimalBarn/
 ├── ModEntry.cs            # 入口/事件接线
 ├── LobbyMapBuilder.cs     # 大堂地图生成
 ├── RoomMapBuilder.cs      # 房间地图生成
-├── HubMenu.cs             # 中枢 4 页签菜单
+├── HubMenu.cs             # 中枢 4 页签菜单(含取货/防刷蛋)
 ├── HubConsole.cs          # 中枢电脑(自定义大件)
 ├── SettlementService.cs   # 每日结算编排
 ├── AnimalLedger.cs        # 台账结算逻辑
 ├── BarnPatches.cs         # Harmony 补丁(结算/心情/提示)
 ├── AutoGrabberInterceptor.cs  # 产物拦截
 ├── BuildDataInjection.cs  # 建筑/物品数据注入
+├── MultiplayerSync.cs     # 联机同步(主机权威/客机转发)
+├── AddItemSimulator.cs    # 取货放入量回归模拟器(原版语义)
 ├── docs/                  # 设计文档 + 渲染预览图
 └── logic_test/            # 纯逻辑单元测试
 ```
