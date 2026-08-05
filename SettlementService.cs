@@ -44,7 +44,8 @@ public static class SettlementService
         int autoPetHappiness = (int)Math.Round(40 * petScale);
         var ctx = new SettleContext(
             FriendshipGain: autoPetFriendship,
-            HappinessGain: autoPetHappiness);
+            HappinessGain: autoPetHappiness,
+            DaySeed: (int)Game1.stats.DaysPlayed);   // 确定性星级种子:同一天所有端一致
         var entityIds = room is AnimalHouse ah0 ? GetEntityIds(ah0) : null;
         var hay = ledger.SettleDay(ctx, state.HayStock, entityIds);
 
@@ -52,13 +53,35 @@ public static class SettlementService
         // 这里【不重复扣草】—— 否则同一批实体可能双扣。
         state.HayStock = Math.Max(0, state.HayStock - hay.HayConsumed);
 
-        // 4. 实体动物自动护理 = 【每个房间装了一台自动抚摸机】:
-        //    1级房间 = 自动抚摸机一半效果,满级房间 = 一倍效果(AutoPetter 原版:好感+15、心情+5/天)。
-        //    wasAutoPet=true → 动物判定"已被抚摸"(在屋里被照顾),不会掉心情/好感。
+        // 4. 实体动物【自动收产 + 自动护理】(= 每房间一台自动抚摸机 + 无限挤奶桶/剪刀):
+        //    自动收产:牛/羊/山羊的产物挂在 currentProduce 身上(原版 HarvestWithTool,
+        //    要玩家用挤奶桶/剪刀手动收),猪的产物要户外拱地(DigUp)才掉—— 房间室内永远触发不了
+        //    → 这批动物【永不产】!(= "9 个房子 9 个动物,其中随机一间当天没有产物" + 仓库缺页根因)
+        //    自动收产 = 原版 MilkPail/Shears 的收获逻辑(MilkPail.cs:106-122):
+        //    obj = ItemRegistry.Create("(O)"+currentProduce); obj.Quality = produceQuality; 清 currentProduce。
+        //    产物按星级入仓(与掉地拦截器同款 key)。
+        //    自动护理:好感+友情、wasAutoPet=true(判定"已被抚摸",防"关外面"衰减)。
         if (room is AnimalHouse ah)
         {
             foreach (var animal in ah.animals.Values)
             {
+                // 自动收产
+                if (!string.IsNullOrEmpty(animal.currentProduce.Value))
+                {
+                    string pid = animal.currentProduce.Value;   // 无 (O) 前缀
+                    string qualified = "(O)" + pid;
+                    if (qualified.StartsWith("(O)(O)")) qualified = qualified.Replace("(O)(O)", "(O)");
+                    if (qualified != "(O)")
+                    {
+                        string key = AutoGrabberInterceptor.ProduceKey(qualified, animal.produceQuality.Value);
+                        roomState.ProduceStacks.TryGetValue(key, out int n);
+                        roomState.ProduceStacks[key] = n + 1;
+                        roomState.ProduceCount++;
+                        animal.currentProduce.Value = null;   // 清空:已入仓,不在地上了
+                    }
+                }
+
+                // 自动护理
                 animal.friendshipTowardFarmer.Value = Math.Min(1000,
                     animal.friendshipTowardFarmer.Value + ctx.FriendshipGain);
                 animal.happiness.Value = (byte)Math.Min(255,
@@ -91,18 +114,29 @@ public static class SettlementService
     /// ⚠️ 只有已创建的房间才有实体动物(原生 DayUpdate 已结算它们 → 台账跳过)。
     /// 未创建房间 = 纯台账 → 全部结算。这是"买 100 只鸡只有 3 个蛋"的修复:
     /// 此前只结算已创建房间,没进门的房间台账永远不产。
-    /// 结算后立即落盘 modData(联机:NetField 同步访客,仓库/中枢立刻可见)。</summary>
+    /// 结算后立即落盘 modData(联机:NetField 同步访客,仓库/中枢立刻可见)。
+    ///
+    /// ⚠️ 双结算防护(2026-08-05 新增):SMAPI 的 DayStarted 事件在【所有地点 DayUpdate 之后】才触发
+    /// (Game1._newDayAfterFade 协程跑完 location.DayUpdate 循环,才轮到 SMAPI 触发 DayStarted)。
+    /// 而 DayUpdate 的 postfix(SettleRoom)已结算过【已创建房间】的台账 → 这里再跑 SettleDay 一次 =
+    /// 台账动物被结算两次(双倍产物/双扣草)!所以这里只结算【未创建房间】(纯台账房间),
+    /// 已创建房间已由 SettleRoom 结算,跳过。</summary>
     public static void SettleAllRooms(BarnSaveData state, Building? building)
     {
         foreach (var (roomKey, roomState) in state.Rooms.ToList())
         {
             if (!Enum.TryParse<RoomType>(roomKey, out var roomType)) continue;
 
+            // ⚠️ 已创建房间:DayUpdate postfix 已结算(含实体收产)→ 跳过,防台账双倍结算
+            // (building 为 null 时无房间可查 = 全部纯台账结算,测试/无建筑场景)
+            if (building != null && RoomManager.GetExisting(building, roomType) != null) continue;
+
             // 自动抚摸机效果(按房间等级:1级=一半,满级=一倍;原版 AutoPetter 好感+8/心情+40)
             float petScale = 0.5f + 0.5f * (roomState.UpgradeLevel / 5f);
             var ctx = new SettleContext(
                 FriendshipGain: (int)Math.Round(8 * petScale),
-                HappinessGain: (int)Math.Round(40 * petScale));
+                HappinessGain: (int)Math.Round(40 * petScale),
+                DaySeed: (int)Game1.stats.DaysPlayed);   // 确定性星级种子:同一天所有端一致
 
             var ledger = AnimalLedger.FromRoom(roomState);
             ledger.Capacity = UpgradeSystem.CapacityAt(roomType, roomState.UpgradeLevel);
@@ -151,6 +185,10 @@ public static class SettlementService
                 match.Happiness = animal.happiness.Value;
                 match.Fullness = animal.fullness.Value;
                 match.AgeDays = animal.age.Value;
+                // ⚠️ 关键:同步生产周期。实体当天产过(掉地/自动收产)→ 原生把 daysSinceLastLay 清零;
+                // 台账不跟着清零 → 明天台账再产一份 = 双产(实体一份 + 台账一份)。
+                // 原生 dayUpdate 每天 +1 后再判阈值,台账 SettleDay 也是每天 +1 后判 → 两路径周期一致。
+                match.DaysSinceProduce = animal.daysSinceLastLay.Value;
             }
         }
     }

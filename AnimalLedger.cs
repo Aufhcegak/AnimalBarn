@@ -6,7 +6,8 @@ public record SettleHayResult(int HayConsumed, int HungryAdults);
 /// <summary>每日结算上下文。</summary>
 public record SettleContext(
     int FriendshipGain,   // 每日自动护理好感增量(随整体等级 6-12)
-    int HappinessGain     // 每日自动护理心情增量
+    int HappinessGain,    // 每日自动护理心情增量
+    int DaySeed = 0       // 每日确定性种子(主机传 Game1.stats.DaysPlayed;同一天所有端一致 → 星级判定联机同步)
 );
 
 /// <summary>每个房间的动物台账:全量数据 + 最多 30 只实体(渲染)。纯逻辑,可测试。</summary>
@@ -81,7 +82,7 @@ public class AnimalLedger
                     a.Fullness = 255;
                     a.Happiness = Math.Min(255, a.Happiness + ctx.HappinessGain);
                     a.Friendship = Math.Min(1000, a.Friendship + ctx.FriendshipGain);
-                    TryProduce(a);
+                    TryProduce(a, ctx.DaySeed);
                     a.DaysSinceProduce++;  // 结算日计入生产周期
                 }
                 else
@@ -117,17 +118,37 @@ public class AnimalLedger
         ProduceStacks[key] = n + 1;
     }
 
-    /// <summary>生产判定:用结算前的 DaysSinceProduce 判阈值(产出的那天算新周期第 1 天),
-    /// 保证 DaysToProduce 天后才产出(鸡=1 天、鸭=2 天)。
-    /// 心情低于 70 时不产也不清零,间隔继续累积(心情恢复后补产)。</summary>
-    private void TryProduce(LedgerAnimal a)
+    /// <summary>生产判定 + 星级判定(照抄原版 FarmAnimal.dayUpdate 的公式,FarmAnimal.cs:1016-1053):
+    /// 1) 生产:结算前的 DaysSinceProduce 达阈值(产出的那天算新周期第 1 天)。
+    /// 2) 星级:num4 = 好感/1000 - (1 - 心情/225);好感满+心情满 = 0.65。
+    ///    按 num4 顺序掷:铱(>=0.95 且 rnd < num4/2) → 金(rnd < num4/2) → 银(rnd < num4) → 普通。
+    /// 3) 随机用"动物ID/2 + 天种子"做种子 → 同一天所有端判定一致(联机同步,确定可复现);
+    ///    DaySeed=0(旧调用)时退回纯 ID 种子(每只动物结果稳定,测试友好)。</summary>
+    private void TryProduce(LedgerAnimal a, int daySeed = 0)
     {
         var info = FarmAnimalCatalog.Get(a.Room);
-        if (a.Happiness >= 70 && a.DaysSinceProduce >= info.DaysToProduce && info.ProduceId != null)
+        if (a.Happiness < 70 || a.DaysSinceProduce < info.DaysToProduce || info.ProduceId == null) return;
+
+        a.DaysSinceProduce = 0;
+        a.ProduceCount++;
+        AddProduceWithQuality(info.ProduceId, RollQuality(a, daySeed));
+    }
+
+    /// <summary>原版星级公式(确定性):同一天同一只动物结算多次,结果一致(双结算防刷星/防测试抖动)。
+    /// 用纯整数混合做种子(不用 HashCode.Combine —— 它在 .NET 里每进程随机化,跨进程不可复现)。</summary>
+    private static int RollQuality(LedgerAnimal a, int daySeed)
+    {
+        // 原版:num4 = 好感/1000 - (1 - 心情/225);好感满 1000 + 心情满 255 → 0.65
+        double num4 = (double)a.Friendship / 1000.0 - (1.0 - (double)a.Happiness / 225.0);
+        unchecked
         {
-            a.DaysSinceProduce = 0;
-            a.ProduceCount++;
-            AddProduce(info.ProduceId);
+            int seed = (int)(a.Id * 1000003L) ^ (int)((long)daySeed * 2654435761L);   // 纯整数混合:跨进程/跨端可复现
+            var rnd = new Random(seed);
+            double roll = rnd.NextDouble();
+            if (num4 >= 0.95 && roll < num4 / 2.0) return 4;          // 铱
+            if (roll < num4 / 2.0) return 2;                          // 金
+            if (roll < num4) return 1;                                // 银
         }
+        return 0;                                                     // 普通
     }
 }

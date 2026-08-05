@@ -90,6 +90,82 @@ Check("short hay: first fed", a1.Fullness == 255 && a1.Friendship == 6);
 Check("short hay: second hungry", a2.Fullness == 0 && a2.Friendship == 80 && a2.Happiness == 100);
 Check("short hay: only fed one produces", l6.ProduceCount == 1 && a1.ProduceCount == 1 && a2.ProduceCount == 0);
 
+// --- 星级判定回归(2026-08-05 修复:台账产物不再硬编码 0 星) ---
+// 原版公式(FarmAnimal.cs:1034-1053):num4 = 好感/1000 - (1 - 心情/225);
+// ⚠️ 本 mod 在结算时先加心情增益再掷质量(与"原版+自动抚摸机"语义一致:
+//    自动抚摸机白天 +心情 → 次日夜里质量掷骰用加后的心情)。
+// 确定性:同一天(DaySeed 相同)同一只动物结算多次,结果完全一致(联机同步/防双结算刷星)。
+
+// 9. 好感 300+心情 200 的动物会出银/金(不再全是 0 星)
+//    (加增益后心情=220 → num4 = 0.3 - (1-220/225) = 0.278 → 金/银各 13.9%、普通 72%)
+{
+    int silver = 0, gold = 0, iridium = 0, normal = 0;
+    for (int i = 0; i < 1000; i++)
+    {
+        var a9 = new LedgerAnimal { Id = 50000 + i, Room = RoomType.Chicken, AgeDays = 10, Happiness = 200, Fullness = 255, DaysSinceProduce = 1, Friendship = 300 };
+        var lg9 = new AnimalLedger { Capacity = 500 };
+        lg9.TryAdd(a9);
+        lg9.SettleDay(new SettleContext(6, 20, DaySeed: 1), hayAvailable: 100);
+        int q = lg9.ProduceStacks.ContainsKey("(O)176|1") ? 1 : lg9.ProduceStacks.ContainsKey("(O)176|2") ? 2 : lg9.ProduceStacks.ContainsKey("(O)176|4") ? 4 : 0;
+        if (q == 1) silver++;
+        else if (q == 2) gold++;
+        else if (q == 4) iridium++;
+        else normal++;
+    }
+    Check("QUAL: 好感300 心情200 → 有银星产出(非全0星)", silver > 30);
+    Check("QUAL: 好感300 心情200 → 有金星产出(非全0星)", gold > 30);
+    Check("QUAL: 好感300 心情200 → 大多数还是普通(原版概率)", normal > silver + gold + iridium);
+    Check("QUAL: 好感300 心情200 → 不出铱星(需要好感近满)", iridium == 0);
+}
+
+// 10. 确定性:同一天同参数动物(同 Id/同种子)多次结算 → 星级完全一致
+//    (防双结算刷星/联机不同步)。用全新实例,避免复用同一只导致结算后不再产。
+{
+    var mk = () => new LedgerAnimal { Id = 77777, Room = RoomType.Chicken, AgeDays = 10, Happiness = 255, Fullness = 255, DaysSinceProduce = 1, Friendship = 800 };
+    int Qual(LedgerAnimal a)
+    {
+        var lg = new AnimalLedger { Capacity = 10 };
+        lg.TryAdd(a);
+        lg.SettleDay(new SettleContext(6, 20, DaySeed: 42), 100);
+        string? k = lg.ProduceStacks.Keys.FirstOrDefault(kk => kk.StartsWith("(O)176"));
+        if (k == null) return -1;
+        var parts = k.Split('|');
+        return parts.Length == 2 && int.TryParse(parts[1], out var v) ? v : -1;
+    }
+    int q1 = Qual(mk()), q2 = Qual(mk()), q3 = Qual(mk());
+    Check("DETERM: 同一天同动物 3 次结算星级一致", q1 == q2 && q2 == q3 && q1 >= 0);
+}
+
+// 11. 不同天(DaySeed 不同)星级可变(不会永远同一星)
+{
+    var qs = new HashSet<int>();
+    for (int seed = 0; seed < 50; seed++)
+    {
+        var a11 = new LedgerAnimal { Id = 88888, Room = RoomType.Chicken, AgeDays = 10, Happiness = 255, Fullness = 255, DaysSinceProduce = 1, Friendship = 800 };
+        var lg11 = new AnimalLedger { Capacity = 10 };
+        lg11.TryAdd(a11);
+        lg11.SettleDay(new SettleContext(6, 20, DaySeed: seed), 100);
+        int q = lg11.ProduceStacks.Keys.FirstOrDefault(k => k.StartsWith("(O)176"))?.Split('|')[^1] is { } s && int.TryParse(s, out var v) ? v : 0;
+        qs.Add(q);
+    }
+    Check("DETERM: 不同天星级有变化(不会永远同一星)", qs.Count >= 2);
+}
+
+// 12. 好感 1000 + 心情 255 → 出铱星(原版 num4 = 1 - (1-255/225) = 1.13 > 1 → 铱≈57%)
+//    (原版公式特性:num4>=0.95 时铱"吞掉"金 → 金≈0,银被铱挤到≈43% —— 真实行为,不是 bug)
+{
+    int irid = 0;
+    for (int i = 0; i < 500; i++)
+    {
+        var a12 = new LedgerAnimal { Id = 70000 + i, Room = RoomType.Chicken, AgeDays = 10, Happiness = 255, Fullness = 255, DaysSinceProduce = 1, Friendship = 1000 };
+        var lg12 = new AnimalLedger { Capacity = 500 };
+        lg12.TryAdd(a12);
+        lg12.SettleDay(new SettleContext(6, 20, DaySeed: 1), 100);
+        if (lg12.ProduceStacks.ContainsKey("(O)176|4")) irid++;
+    }
+    Check("QUAL: 好感1000 心情255 → 出铱星(原版 num4>1 铱≈57%)", irid > 200);
+}
+
 // --- UpgradeSystem 测试 ---
 Check("unlock chicken lvl1", UpgradeSystem.IsUnlocked(RoomType.Chicken, 1));
 Check("no pig lvl1", !UpgradeSystem.IsUnlocked(RoomType.Pig, 1));
